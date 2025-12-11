@@ -283,9 +283,16 @@ fn walk_dir<P: AsRef<Path>>(root: P, pathspec: &Pathspec) -> Result<Vec<FileKey>
                 let rel_path = entry.path().strip_prefix(root.as_ref())?;
 
                 if abs_path.is_file() && pathspec.matches(&rel_path) {
-                    let content_id = git2::Oid::hash_file(git2::ObjectType::Blob, abs_path).unwrap();
-                    let filename = rel_path.components().map(|c| c.as_os_str().to_string_lossy()).join("/");
-                    keys.push(FileKey::new(filename, content_id.into()));
+                    // FIX: Use proper error handling instead of unwrap()
+                    match git2::Oid::hash_file(git2::ObjectType::Blob, abs_path) {
+                        Ok(content_id) => {
+                            let filename = rel_path.components().map(|c| c.as_os_str().to_string_lossy()).join("/");
+                            keys.push(FileKey::new(filename, content_id.into()));
+                        }
+                        Err(err) => {
+                            log::warn!("Failed to hash file {:?}: {}. Skipping...", abs_path, err);
+                        }
+                    }
                 }
             }
             Err(err) => {
