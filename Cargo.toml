@@ -1,16 +1,12 @@
 [package]
 name = "neodepends"
-version = "0.0.13"
+version = "0.0.12"
 description = "Quickly extract entities, dependencies, and changes from a software project"
-homepage = "https://github.com/FreeworkEarth/neodepends"
-repository = "https://github.com/FreeworkEarth/neodepends"
+homepage = "https://github.com/jlefever/neodepends"
+repository = "https://github.com/jlefever/neodepends"
 readme = "README.md"
 license = "Apache-2.0"
-authors = [
-  "Jason Lefever <jason.titus.lefever@gmail.com>",
-  "Christoph Haring <charing@hawaii.edu>",
-  "Bao Vuong <baovg.a1.k2023@gmail.com>"
-]
+authors = ["Jason Lefever <jason.titus.lefever@gmail.com>"]
 edition = "2021"
 
 [dependencies]
