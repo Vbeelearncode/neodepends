@@ -8,5 +8,12 @@ __pycache__/
 tools/neodepends_python_export.py.broken_backup
 tools/generate_ground_truth_java_toy.py
 
+# Local test scripts and results
+run_all_final_tests.sh
+run_dependency_analysis.sh
+NEODEPENDS_DEICIDE/
+RESULTS_QuickStart/
+RESULTS_QuickStart_Examples/
+
 # Local workspace paths accidentally created by running tools from within this repo
 TEST_AUTO/

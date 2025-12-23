@@ -1,4 +1,4 @@
-# `--filter-architecture` (aka `--align-handcount`)
+# `--filter-architecture`
 
 This document describes the “architecture DSM” filtering mode used by `tools/neodepends_python_export.py`.
 
@@ -79,4 +79,3 @@ If you want to approximate dynamic behavior while keeping a stable DSM, combine 
    - evaluate how clustering stability changes as weights change
 
 This yields an “architecture DSM + observed dynamics” view (quasi-static), without claiming full soundness.
-

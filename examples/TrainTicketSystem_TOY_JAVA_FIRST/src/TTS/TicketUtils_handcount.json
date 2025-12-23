@@ -1,0 +1,123 @@
+{
+  "description": "Ground truth dependencies for TicketUtils.java - class with only static methods (utility class)",
+  "file": "TicketUtils.java",
+  "entities": [
+    {
+      "name": "TicketUtils",
+      "kind": "Class",
+      "note": "Utility class containing only static methods"
+    },
+    {
+      "name": "DEFAULT_PRICE_PER_KM",
+      "kind": "Field",
+      "note": "Static constant field"
+    },
+    {
+      "name": "DEFAULT_MAX_SEATS",
+      "kind": "Field",
+      "note": "Static constant field"
+    },
+    {
+      "name": "validateTicketPrice",
+      "kind": "Method",
+      "note": "Static method"
+    },
+    {
+      "name": "calculateTotalFare",
+      "kind": "Method",
+      "note": "Static method - has 2 overloads"
+    },
+    {
+      "name": "formatCurrency",
+      "kind": "Method",
+      "note": "Static method - has 2 overloads"
+    },
+    {
+      "name": "calculateDiscount",
+      "kind": "Method",
+      "note": "Static method"
+    },
+    {
+      "name": "validateSeatNumber",
+      "kind": "Method",
+      "note": "Static method - has 2 overloads"
+    },
+    {
+      "name": "generateTicketId",
+      "kind": "Method",
+      "note": "Static method - has 2 overloads"
+    }
+  ],
+  "dependencies": [
+    {
+      "src": "calculateTotalFare(double,double)",
+      "tgt": "calculateTotalFare(double,double,double)",
+      "kind": "Call",
+      "line": 22,
+      "note": "Overload delegates to 3-param version with DEFAULT_PRICE_PER_KM"
+    },
+    {
+      "src": "calculateTotalFare(double,double)",
+      "tgt": "DEFAULT_PRICE_PER_KM",
+      "kind": "Use",
+      "line": 22,
+      "note": "Uses constant field"
+    },
+    {
+      "src": "calculateTotalFare(double,double,double)",
+      "tgt": "validateTicketPrice",
+      "kind": "Call",
+      "line": 29,
+      "note": "Calls validation method"
+    },
+    {
+      "src": "formatCurrency(double)",
+      "tgt": "formatCurrency(double,String)",
+      "kind": "Call",
+      "line": 44,
+      "note": "Overload delegates to 2-param version"
+    },
+    {
+      "src": "calculateDiscount",
+      "tgt": "validateTicketPrice",
+      "kind": "Call",
+      "line": 54,
+      "note": "Calls validation method"
+    },
+    {
+      "src": "validateSeatNumber(int)",
+      "tgt": "validateSeatNumber(int,int)",
+      "kind": "Call",
+      "line": 69,
+      "note": "Overload delegates to 2-param version with DEFAULT_MAX_SEATS"
+    },
+    {
+      "src": "validateSeatNumber(int)",
+      "tgt": "DEFAULT_MAX_SEATS",
+      "kind": "Use",
+      "line": 69,
+      "note": "Uses constant field"
+    },
+    {
+      "src": "generateTicketId(int)",
+      "tgt": "generateTicketId(String,int)",
+      "kind": "Call",
+      "line": 85,
+      "note": "Overload delegates to 2-param version with default prefix"
+    }
+  ],
+  "expected_entity_count": {
+    "File": 1,
+    "Class": 1,
+    "Field": 2,
+    "Method": 10,
+    "Function": 0,
+    "note": "10 methods due to overloads: calculateTotalFare(2), formatCurrency(2), validateSeatNumber(2), generateTicketId(2), plus 4 single methods"
+  },
+  "expected_dependency_count": {
+    "Call": 6,
+    "Use": 2,
+    "total": 8,
+    "note": "Calls between overloaded methods + calls to validateTicketPrice + uses of constant fields"
+  }
+}

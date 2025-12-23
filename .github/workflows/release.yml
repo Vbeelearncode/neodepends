@@ -19,7 +19,7 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
-          - macos-13
+          - macos-15-intel
           - macos-latest
 
     steps:
@@ -59,11 +59,11 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${env:GITHUB_REF_NAME}"
-          $host = (rustc -vV | Select-String '^host: ' | ForEach-Object { $_.ToString().Split(' ')[1] })
+          $hostTriple = (rustc -vV | Select-String '^host: ' | ForEach-Object { $_.ToString().Split(' ')[1] })
           $bin = "neodepends"
 
           # Full bundle: binary + tools + languages + artifacts (depends.jar) + examples
-          $bundleDir = "dist/$bin-pyfork-$tag-$host"
+          $bundleDir = "dist/$bin-pyfork-$tag-$hostTriple"
           New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
           Copy-Item "target/release/$bin.exe" "$bundleDir/$bin.exe"
           if (Test-Path "README.md") { Copy-Item "README.md" "$bundleDir/README.md" }
@@ -72,7 +72,9 @@ jobs:
           if (Test-Path "languages") { Copy-Item -Recurse -Force "languages" "$bundleDir/languages" }
           if (Test-Path "artifacts") { Copy-Item -Recurse -Force "artifacts" "$bundleDir/artifacts" }
           if (Test-Path "examples") { Copy-Item -Recurse -Force "examples" "$bundleDir/examples" }
-          Compress-Archive -Force -Path "$bundleDir/*" -DestinationPath "dist/$bin-pyfork-$tag-$host.zip"
+
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Force -Path "$bundleDir" -DestinationPath "dist/$bin-pyfork-$tag-$hostTriple.zip"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2

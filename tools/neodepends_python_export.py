@@ -1935,7 +1935,7 @@ def build_class_folder_clustering(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--neodepends-bin", type=Path, default=Path("./target/release/neodepends"))
-    parser.add_argument("--input", type=Path, required=True, help="Focus directory (e.g., .../tts/)")
+    parser.add_argument("--input", type=Path, required=True, help="Focus directory or single Python file (e.g., .../tts/ or .../file.py)")
     parser.add_argument(
         "--project-root",
         type=Path,
@@ -2113,9 +2113,11 @@ def main() -> int:
     neodepends_bin: Path = _resolve_path_arg(
         args.neodepends_bin, prefer_agent_root=False, must_exist=True, kind="NeoDepends binary"
     )
-    focus_dir: Path = _resolve_path_arg(args.input, prefer_agent_root=True, must_exist=True, kind="Input directory")
-    if not focus_dir.is_dir():
-        raise NotADirectoryError(f"Input path is not a directory: {focus_dir}")
+    focus_path: Path = _resolve_path_arg(args.input, prefer_agent_root=True, must_exist=True, kind="Input path")
+    if not focus_path.exists():
+        raise FileNotFoundError(f"Input path does not exist: {focus_path}")
+    if not (focus_path.is_dir() or focus_path.is_file()):
+        raise ValueError(f"Input path must be a file or directory: {focus_path}")
 
     output_root: Path = _resolve_path_arg(
         args.output_dir, prefer_agent_root=True, must_exist=False, kind="Output directory"
@@ -2153,7 +2155,40 @@ def main() -> int:
         the top-level package folder (e.g. `tts/...`). If the user passes `.../tts`
         as --input and the code imports `tts.*`, we run NeoDepends from the parent
         directory and export only files with prefix `tts/`.
+
+        If --input is a single file, use its parent directory as project root.
         """
+        # Handle single file input
+        if focus_path.is_file():
+            parent_dir = focus_path.parent
+            file_name = focus_path.name
+
+            if args.project_root is not None:
+                # If explicit project root provided, use it
+                project_root = _resolve_path_arg(
+                    args.project_root, prefer_agent_root=True, must_exist=True, kind="Project root"
+                )
+                if not project_root.is_dir():
+                    raise NotADirectoryError(f"Project root is not a directory: {project_root}")
+                try:
+                    rel = focus_path.resolve().relative_to(project_root.resolve())
+                    return project_root, str(rel.as_posix()) + "/"
+                except Exception:
+                    return parent_dir, f"{file_name}/"
+            elif args.no_auto_project_root or "python" not in langs:
+                # Use parent as project root, file name as focus prefix
+                return parent_dir, f"{file_name}/"
+            else:
+                # Try to detect if parent directory is a Python package
+                if (parent_dir / "__init__.py").exists():
+                    # Parent is a package, use its parent as project root
+                    pkg_name = parent_dir.name
+                    return parent_dir.parent, f"{pkg_name}/{file_name}/"
+                else:
+                    # Parent is not a package, use it as project root
+                    return parent_dir, f"{file_name}/"
+
+        # Handle directory input (existing logic)
         if args.project_root is not None:
             project_root = _resolve_path_arg(
                 args.project_root, prefer_agent_root=True, must_exist=True, kind="Project root"
@@ -2161,7 +2196,7 @@ def main() -> int:
             if not project_root.is_dir():
                 raise NotADirectoryError(f"Project root is not a directory: {project_root}")
             try:
-                rel = focus_dir.resolve().relative_to(project_root.resolve())
+                rel = focus_path.resolve().relative_to(project_root.resolve())
                 rel_s = rel.as_posix()
                 focus_prefix = None if rel_s == "." else f"{rel_s.rstrip('/')}/"
             except Exception:
@@ -2169,12 +2204,12 @@ def main() -> int:
             return project_root, focus_prefix
 
         if args.no_auto_project_root or "python" not in langs:
-            return focus_dir, None
+            return focus_path, None
 
-        pkg_init = focus_dir / "__init__.py"
-        pkg_name = focus_dir.name
+        pkg_init = focus_path / "__init__.py"
+        pkg_name = focus_path.name
         if not pkg_init.exists() or not pkg_name:
-            return focus_dir, None
+            return focus_path, None
 
         # Heuristic: if any file mentions `from <pkg>.` or `import <pkg>`,
         # treat parent as project root so files are named `<pkg>/...`.
@@ -2182,7 +2217,7 @@ def main() -> int:
         import_pat_2 = f"import {pkg_name}"
         found = False
         try:
-            for py in focus_dir.rglob("*.py"):
+            for py in focus_path.rglob("*.py"):
                 txt = py.read_text(encoding="utf-8", errors="ignore")
                 if import_pat_1 in txt or import_pat_2 in txt:
                     found = True
@@ -2191,9 +2226,9 @@ def main() -> int:
             found = False
 
         if not found:
-            return focus_dir, None
+            return focus_path, None
 
-        return focus_dir.parent, f"{pkg_name}/"
+        return focus_path.parent, f"{pkg_name}/"
 
     project_root, focus_prefix = detect_project_root_and_focus_prefix()
     include_root_py = focus_prefix is not None
@@ -2226,7 +2261,7 @@ def main() -> int:
             logger.line(f"timestamp: {_dt.datetime.now().isoformat()}")
             logger.line(f"resolver: {resolver}")
             logger.line(f"project_root: {project_root}")
-            logger.line(f"focus_dir: {focus_dir}")
+            logger.line(f"focus_path: {focus_path}")
             if focus_prefix:
                 logger.line(f"focus_prefix: {focus_prefix}")
             logger.line(f"output: {out_dir}")
@@ -2454,7 +2489,7 @@ def main() -> int:
                 "filter_architecture": align_handcount,
                 "filter_stackgraphs_false_positives": bool(args.filter_stackgraphs_false_positives),
                 "used_filtered_raw_db": used_filtered_db,
-                "input_dir": str(focus_dir),
+                "input_dir": str(focus_path),
                 "project_root": str(project_root),
                 "focus_prefix": focus_prefix,
                 "output_dir": str(out_dir),
@@ -2587,7 +2622,7 @@ def main() -> int:
         (output_root / "comparison.json").write_text(json.dumps(comparison, indent=2), encoding="utf-8")
 
         lines = []
-        lines.append(f"focus_dir: {focus_dir}")
+        lines.append(f"focus_path: {focus_path}")
         lines.append(f"project_root: {project_root}")
         if focus_prefix:
             lines.append(f"focus_prefix: {focus_prefix}")

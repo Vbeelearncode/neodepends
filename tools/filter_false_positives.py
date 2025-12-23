@@ -292,7 +292,10 @@ def filter_dependencies(input_db: str, output_db: str):
     print(f"  Original dependencies: {total_deps}")
     print(f"  False positives removed: {len(false_positives)}")
     print(f"  Cleaned dependencies: {final_count}")
-    print(f"  Reduction: {len(false_positives) / total_deps * 100:.1f}%")
+    if total_deps > 0:
+        print(f"  Reduction: {len(false_positives) / total_deps * 100:.1f}%")
+    else:
+        print(f"  Reduction: N/A (no dependencies found)")
 
     conn.close()
     print(f"\nCleaned database saved to: {output_db}")
