@@ -154,20 +154,26 @@ fi
 REPORT_LINES+=("")
 
 # ============================================================================
-# TEST 3: Documentation - Check README has Windows Script Requirements
+# TEST 3: Documentation - Check README has Cross-Platform Setup Instructions
 # ============================================================================
-log_test "Documentation - README has Windows Script Requirements section"
+log_test "Documentation - README has cross-platform setup instructions"
 
-if grep -q "### Windows Script Requirements" README.md; then
-    log_pass "README has Windows Script Requirements section"
+if grep -q "QuickStart Release Bundle: One-Command Setup & Analysis" README.md; then
+    log_pass "README has QuickStart cross-platform setup section"
 else
-    log_fail "README missing Windows Script Requirements section"
+    log_fail "README missing QuickStart setup section"
 fi
 
-if grep -q "https://git-scm.com/download/win" README.md; then
-    log_pass "README includes Git Bash download link"
+if grep -q "python3 setup.py" README.md; then
+    log_pass "README includes Python setup command"
 else
-    log_fail "README missing Git Bash download link"
+    log_fail "README missing Python setup command"
+fi
+
+if grep -q "python3 run_dependency_analysis.py" README.md; then
+    log_pass "README includes Python analysis command"
+else
+    log_fail "README missing Python analysis command"
 fi
 
 REPORT_LINES+=("")
