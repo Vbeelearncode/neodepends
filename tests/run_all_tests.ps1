@@ -122,20 +122,26 @@ if (Select-String -Path "run_dependency_analysis.ps1" -Pattern "Auto-selected re
 }
 
 # ============================================================================
-# TEST 3: Documentation - Check README has Windows Script Requirements
+# TEST 3: Documentation - Check README has Cross-Platform Setup Instructions
 # ============================================================================
-Log-Test "Documentation - README has Windows Script Requirements section"
+Log-Test "Documentation - README has cross-platform setup instructions"
 
-if (Select-String -Path "README.md" -Pattern "### Windows Script Requirements" -Quiet) {
-    Log-Pass "README has Windows Script Requirements section"
+if (Select-String -Path "README.md" -Pattern "QuickStart Release Bundle: One-Command Setup & Analysis" -Quiet) {
+    Log-Pass "README has QuickStart cross-platform setup section"
 } else {
-    Log-Fail "README missing Windows Script Requirements section"
+    Log-Fail "README missing QuickStart setup section"
 }
 
-if (Select-String -Path "README.md" -Pattern "https://git-scm.com/download/win" -Quiet) {
-    Log-Pass "README includes Git Bash download link"
+if (Select-String -Path "README.md" -Pattern "python3 setup.py" -Quiet) {
+    Log-Pass "README includes Python setup command"
 } else {
-    Log-Fail "README missing Git Bash download link"
+    Log-Fail "README missing Python setup command"
+}
+
+if (Select-String -Path "README.md" -Pattern "python3 run_dependency_analysis.py" -Quiet) {
+    Log-Pass "README includes Python analysis command"
+} else {
+    Log-Fail "README missing Python analysis command"
 }
 
 # ============================================================================
