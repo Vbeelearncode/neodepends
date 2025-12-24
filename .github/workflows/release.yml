@@ -49,7 +49,7 @@ jobs:
           mkdir -p "${BUNDLE_DIR}"
           cp "target/release/${BIN}" "${BUNDLE_DIR}/${BIN}"
           cp README.md LICENSE "${BUNDLE_DIR}/" || true
-          cp run_dependency_analysis.sh QuickStart_dependency_analysis_examples.sh "${BUNDLE_DIR}/" || true
+          cp run_dependency_analysis.sh QuickStart_dependency_analysis_examples.sh run_dependency_analysis.ps1 QuickStart_dependency_analysis_examples.ps1 "${BUNDLE_DIR}/" || true
           cp -R tools languages artifacts examples "${BUNDLE_DIR}/" 2>/dev/null || true
 
           mkdir -p dist
@@ -71,6 +71,8 @@ jobs:
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" "$bundleDir/LICENSE" }
           if (Test-Path "run_dependency_analysis.sh") { Copy-Item "run_dependency_analysis.sh" "$bundleDir/run_dependency_analysis.sh" }
           if (Test-Path "QuickStart_dependency_analysis_examples.sh") { Copy-Item "QuickStart_dependency_analysis_examples.sh" "$bundleDir/QuickStart_dependency_analysis_examples.sh" }
+          if (Test-Path "run_dependency_analysis.ps1") { Copy-Item "run_dependency_analysis.ps1" "$bundleDir/run_dependency_analysis.ps1" }
+          if (Test-Path "QuickStart_dependency_analysis_examples.ps1") { Copy-Item "QuickStart_dependency_analysis_examples.ps1" "$bundleDir/QuickStart_dependency_analysis_examples.ps1" }
           if (Test-Path "tools") { Copy-Item -Recurse -Force "tools" "$bundleDir/tools" }
           if (Test-Path "languages") { Copy-Item -Recurse -Force "languages" "$bundleDir/languages" }
           if (Test-Path "artifacts") { Copy-Item -Recurse -Force "artifacts" "$bundleDir/artifacts" }

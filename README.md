@@ -33,7 +33,7 @@ chmod +x run_dependency_analysis.sh
 
 ```powershell
 cd C:\path\to\neodepends
-bash run_dependency_analysis.sh
+.\run_dependency_analysis.ps1
 ```
 
 The script will prompt you for:
@@ -80,7 +80,7 @@ chmod +x QuickStart_dependency_analysis_examples.sh
 
 ```powershell
 cd C:\path\to\neodepends
-bash QuickStart_dependency_analysis_examples.sh
+.\QuickStart_dependency_analysis_examples.ps1
 ```
 
 This will analyze 4 example TrainTicketSystem projects (2 Python, 2 Java) and save DV8 DSM files to `RESULTS_QuickStart_Examples/`.
