@@ -245,7 +245,193 @@ if ($LogContent -match "Method→Field") {
 }
 
 # ============================================================================
-# TEST 6: QuickStart Examples - Run all 4 examples
+# TEST 6: Single-File Analysis - VideoClip.py (43k lines)
+# ============================================================================
+Log-Test "Single-File Analysis - VideoClip.py (large single file)"
+
+Log-Info "Analyzing VideoClip.py (43k lines)..."
+$VideoClipPath = (Resolve-Path "examples\Large_Single_File_PYTHON_videoclip\VideoClip.py").Path
+$VideoClipTestDir = Join-Path $TestOutput "videoclip_test"
+$VideoClipLogFile = Join-Path $TestOutput "videoclip_test.log"
+
+& py -3 tools\neodepends_python_export.py `
+  --neodepends-bin $NeodependsBin `
+  --input $VideoClipPath `
+  --output-dir $VideoClipTestDir `
+  --resolver stackgraphs `
+  --stackgraphs-python-mode ast `
+  --dv8-hierarchy structured `
+  --file-level-dv8 `
+  --filter-architecture `
+  --filter-stackgraphs-false-positives `
+  > $VideoClipLogFile 2>&1
+
+if (Test-Path "$VideoClipTestDir\dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json") {
+    Log-Pass "Single-file analysis successful - DV8 file created"
+    $VideoClipSize = (Get-Item "$VideoClipTestDir\dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json").Length
+    Log-Info "Output size: $VideoClipSize bytes"
+
+    # Count dependencies in DB and JSON
+    $VideoClipDbDeps = & sqlite3 "$VideoClipTestDir\dependencies.stackgraphs_ast.db" "SELECT COUNT(*) FROM deps;" 2>$null
+    if (-not $VideoClipDbDeps) { $VideoClipDbDeps = 0 }
+
+    $VideoClipJsonCells = & py -3 -c "import json; data=json.load(open('$VideoClipTestDir/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json'.replace('\\', '/'))); print(len(data.get('cells', [])))" 2>$null
+    if (-not $VideoClipJsonCells) { $VideoClipJsonCells = 0 }
+
+    $VideoClipJsonVars = & py -3 -c "import json; data=json.load(open('$VideoClipTestDir/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json'.replace('\\', '/'))); print(len(data.get('variables', [])))" 2>$null
+    if (-not $VideoClipJsonVars) { $VideoClipJsonVars = 0 }
+
+    Log-Info "DB deps: $VideoClipDbDeps, JSON cells: $VideoClipJsonCells, JSON variables: $VideoClipJsonVars"
+} else {
+    Log-Fail "Single-file analysis FAILED - no DV8 file"
+}
+
+if (Test-Path "$VideoClipTestDir\details") {
+    Log-Pass "Single-file analysis created details/ folder"
+} else {
+    Log-Fail "Single-file analysis did NOT create details/ folder"
+}
+
+# Check if enhancement completed
+$VideoClipLogContent = Get-Content $VideoClipLogFile -Raw
+if ($VideoClipLogContent -match "Method->Field dependencies created") {
+    Log-Info "Single-file enhancement completed"
+}
+
+# ============================================================================
+# TEST 7: Real Project Analysis - Moviepy
+# ============================================================================
+Log-Test "Real Project Analysis - Moviepy"
+
+$MoviepyPath = "tests\examples_testing\Py\moviepy example\moviepy"
+if (Test-Path $MoviepyPath) {
+    Log-Info "Analyzing Moviepy project..."
+    $MoviepyTestDir = Join-Path $TestOutput "moviepy_test"
+    $MoviepyLogFile = Join-Path $TestOutput "moviepy_test.log"
+
+    & py -3 tools\neodepends_python_export.py `
+      --neodepends-bin $NeodependsBin `
+      --input $MoviepyPath `
+      --output-dir $MoviepyTestDir `
+      --resolver stackgraphs `
+      --stackgraphs-python-mode ast `
+      --dv8-hierarchy structured `
+      --file-level-dv8 `
+      --filter-architecture `
+      --filter-stackgraphs-false-positives `
+      > $MoviepyLogFile 2>&1
+
+    if (Test-Path "$MoviepyTestDir\dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json") {
+        Log-Pass "Moviepy analysis successful"
+        $MoviepySize = (Get-Item "$MoviepyTestDir\dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json").Length
+        Log-Info "Output size: $MoviepySize bytes"
+
+        # Extract metrics from log
+        $MoviepyLogContent = Get-Content $MoviepyLogFile -Raw
+        if ($MoviepyLogContent -match "(\d+) Method->Field dependencies created") {
+            $MoviepyMethodField = $Matches[1]
+        } else {
+            $MoviepyMethodField = 0
+        }
+        if ($MoviepyLogContent -match "(\d+) fields now siblings with methods") {
+            $MoviepyFieldsMoved = $Matches[1]
+        } else {
+            $MoviepyFieldsMoved = 0
+        }
+
+        # Count dependencies in DB and JSON
+        $MoviepyDbDeps = & sqlite3 "$MoviepyTestDir\dependencies.stackgraphs_ast.db" "SELECT COUNT(*) FROM deps;" 2>$null
+        if (-not $MoviepyDbDeps) { $MoviepyDbDeps = 0 }
+
+        $MoviepyJsonCells = & py -3 -c "import json; data=json.load(open('$MoviepyTestDir/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json'.replace('\\', '/'))); print(len(data.get('cells', [])))" 2>$null
+        if (-not $MoviepyJsonCells) { $MoviepyJsonCells = 0 }
+
+        $MoviepyJsonVars = & py -3 -c "import json; data=json.load(open('$MoviepyTestDir/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json'.replace('\\', '/'))); print(len(data.get('variables', [])))" 2>$null
+        if (-not $MoviepyJsonVars) { $MoviepyJsonVars = 0 }
+
+        Log-Info "Method->Field deps: $MoviepyMethodField, Fields moved: $MoviepyFieldsMoved"
+        Log-Info "DB deps: $MoviepyDbDeps, JSON cells: $MoviepyJsonCells, JSON variables: $MoviepyJsonVars"
+    } else {
+        Log-Fail "Moviepy analysis FAILED"
+    }
+
+    if (Test-Path "$MoviepyTestDir\details") {
+        Log-Pass "Moviepy created details/ folder"
+    } else {
+        Log-Fail "Moviepy did NOT create details/ folder"
+    }
+} else {
+    Log-Info "Moviepy example not found, skipping..."
+}
+
+# ============================================================================
+# TEST 8: Real Project Analysis - Survey
+# ============================================================================
+Log-Test "Real Project Analysis - Survey"
+
+$SurveyPath = "tests\examples_testing\Py\survey example\survey3"
+if (Test-Path $SurveyPath) {
+    Log-Info "Analyzing Survey project..."
+    $SurveyTestDir = Join-Path $TestOutput "survey_test"
+    $SurveyLogFile = Join-Path $TestOutput "survey_test.log"
+
+    & py -3 tools\neodepends_python_export.py `
+      --neodepends-bin $NeodependsBin `
+      --input $SurveyPath `
+      --output-dir $SurveyTestDir `
+      --resolver stackgraphs `
+      --stackgraphs-python-mode ast `
+      --dv8-hierarchy structured `
+      --file-level-dv8 `
+      --filter-architecture `
+      --filter-stackgraphs-false-positives `
+      > $SurveyLogFile 2>&1
+
+    if (Test-Path "$SurveyTestDir\dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json") {
+        Log-Pass "Survey analysis successful"
+        $SurveySize = (Get-Item "$SurveyTestDir\dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json").Length
+        Log-Info "Output size: $SurveySize bytes"
+
+        # Extract metrics from log
+        $SurveyLogContent = Get-Content $SurveyLogFile -Raw
+        if ($SurveyLogContent -match "(\d+) Method->Field dependencies created") {
+            $SurveyMethodField = $Matches[1]
+        } else {
+            $SurveyMethodField = 0
+        }
+        if ($SurveyLogContent -match "(\d+) fields now siblings with methods") {
+            $SurveyFieldsMoved = $Matches[1]
+        } else {
+            $SurveyFieldsMoved = 0
+        }
+
+        # Count dependencies in DB and JSON
+        $SurveyDbDeps = & sqlite3 "$SurveyTestDir\dependencies.stackgraphs_ast.db" "SELECT COUNT(*) FROM deps;" 2>$null
+        if (-not $SurveyDbDeps) { $SurveyDbDeps = 0 }
+
+        $SurveyJsonCells = & py -3 -c "import json; data=json.load(open('$SurveyTestDir/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json'.replace('\\', '/'))); print(len(data.get('cells', [])))" 2>$null
+        if (-not $SurveyJsonCells) { $SurveyJsonCells = 0 }
+
+        $SurveyJsonVars = & py -3 -c "import json; data=json.load(open('$SurveyTestDir/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json'.replace('\\', '/'))); print(len(data.get('variables', [])))" 2>$null
+        if (-not $SurveyJsonVars) { $SurveyJsonVars = 0 }
+
+        Log-Info "Method->Field deps: $SurveyMethodField, Fields moved: $SurveyFieldsMoved"
+        Log-Info "DB deps: $SurveyDbDeps, JSON cells: $SurveyJsonCells, JSON variables: $SurveyJsonVars"
+    } else {
+        Log-Fail "Survey analysis FAILED"
+    }
+
+    if (Test-Path "$SurveyTestDir\details") {
+        Log-Pass "Survey created details/ folder"
+    } else {
+        Log-Fail "Survey did NOT create details/ folder"
+    }
+} else {
+    Log-Info "Survey example not found, skipping..."
+}
+
+# ============================================================================
+# TEST 9: QuickStart Examples - Run all 4 examples
 # ============================================================================
 Log-Test "QuickStart Examples - All 4 examples run successfully"
 
@@ -294,7 +480,7 @@ if (Test-Path "RESULTS_QuickStart_Examples\java_toy_second\dependencies.dv8-dsm-
 }
 
 # ============================================================================
-# TEST 7: JSON Validation - Verify all generated JSON files are valid
+# TEST 10: JSON Validation - Verify all generated JSON files are valid
 # ============================================================================
 Log-Test "JSON Validation - All generated DV8 files are valid JSON"
 
