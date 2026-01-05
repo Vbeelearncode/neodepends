@@ -159,7 +159,7 @@ if (Test-Path "setup.py") {
 if (Test-Path "setup.py") {
     try {
         $SetupOutput = & python3 setup.py 2>&1 | Out-String
-        if ($SetupOutput -match "Python version") {
+        if ($SetupOutput -match "NeoDepends Setup") {
             Log-Pass "setup.py runs successfully"
         } else {
             Log-Fail "setup.py failed to run"

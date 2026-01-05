@@ -191,7 +191,7 @@ fi
 
 # Test that setup.py runs without errors
 if [ -f "setup.py" ]; then
-    if python3 setup.py 2>&1 | grep -q "Python version"; then
+    if python3 setup.py 2>&1 | grep -q "NeoDepends Setup"; then
         log_pass "setup.py runs successfully"
     else
         log_fail "setup.py failed to run"
