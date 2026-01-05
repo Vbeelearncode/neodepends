@@ -67,7 +67,7 @@ if (Test-Path ".\neodepends.exe") {
 
 Write-Host ""
 Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║  NeoDepends v0.0.15-pyfork Comprehensive Test Suite           ║" -ForegroundColor Green
+Write-Host "║  NeoDepends Python Extension Release Test Suite               ║" -ForegroundColor Green
 Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 Write-Host "Repository: $RepoRoot"
@@ -145,7 +145,32 @@ if (Select-String -Path "README.md" -Pattern "python3 run_dependency_analysis.py
 }
 
 # ============================================================================
-# TEST 4: Folder Structure - Run Python analysis and check details/ folder
+# TEST 4: Setup Script - Verify setup.py exists and works
+# ============================================================================
+Log-Test "Setup Script - Verify setup.py exists and is executable"
+
+if (Test-Path "setup.py") {
+    Log-Pass "setup.py exists in repository root"
+} else {
+    Log-Fail "setup.py not found in repository root"
+}
+
+# Test that setup.py runs without errors
+if (Test-Path "setup.py") {
+    try {
+        $SetupOutput = & python3 setup.py 2>&1 | Out-String
+        if ($SetupOutput -match "Python version") {
+            Log-Pass "setup.py runs successfully"
+        } else {
+            Log-Fail "setup.py failed to run"
+        }
+    } catch {
+        Log-Fail "setup.py execution threw an error"
+    }
+}
+
+# ============================================================================
+# TEST 5: Folder Structure - Run Python analysis and check details/ folder
 # ============================================================================
 Log-Test "Folder Structure - Python analysis creates details/ folder"
 

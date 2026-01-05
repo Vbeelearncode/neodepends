@@ -83,7 +83,7 @@ fi
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║  NeoDepends v0.0.15-pyfork Comprehensive Test Suite           ║${NC}"
+echo -e "${GREEN}║  NeoDepends Python Extension Release Test Suite               ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo "Repository: $REPO_ROOT"
@@ -94,7 +94,7 @@ echo ""
 
 # Initialize markdown report
 cat > "$REPORT_FILE" <<'EOF'
-# COMPREHENSIVE TEST REPORT: NeoDepends v0.0.15-pyfork
+# NeoDepends Python Extension Release Test Report
 
 ## Executive Summary
 
@@ -179,7 +179,29 @@ fi
 REPORT_LINES+=("")
 
 # ============================================================================
-# TEST 4: Folder Structure - Run Python analysis and check details/ folder
+# TEST 4: Setup Script - Verify setup.py exists and works
+# ============================================================================
+log_test "Setup Script - Verify setup.py exists and is executable"
+
+if [ -f "setup.py" ]; then
+    log_pass "setup.py exists in repository root"
+else
+    log_fail "setup.py not found in repository root"
+fi
+
+# Test that setup.py runs without errors
+if [ -f "setup.py" ]; then
+    if python3 setup.py 2>&1 | grep -q "Python version"; then
+        log_pass "setup.py runs successfully"
+    else
+        log_fail "setup.py failed to run"
+    fi
+fi
+
+REPORT_LINES+=("")
+
+# ============================================================================
+# TEST 5: Folder Structure - Run Python analysis and check details/ folder
 # ============================================================================
 log_test "Folder Structure - Python TOY analysis creates details/ folder"
 
