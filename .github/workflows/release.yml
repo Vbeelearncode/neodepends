@@ -49,6 +49,7 @@ jobs:
           mkdir -p "${BUNDLE_DIR}"
           cp "target/release/${BIN}" "${BUNDLE_DIR}/${BIN}"
           cp README.md LICENSE "${BUNDLE_DIR}/" || true
+          cp setup.py REQUIREMENTS.txt run_dependency_analysis.py "${BUNDLE_DIR}/" || true
           cp run_dependency_analysis.sh QuickStart_dependency_analysis_examples.sh run_dependency_analysis.ps1 QuickStart_dependency_analysis_examples.ps1 "${BUNDLE_DIR}/" || true
           cp -R tools languages artifacts examples "${BUNDLE_DIR}/" 2>/dev/null || true
 
@@ -69,6 +70,9 @@ jobs:
           Copy-Item "target/release/$bin.exe" "$bundleDir/$bin.exe"
           if (Test-Path "README.md") { Copy-Item "README.md" "$bundleDir/README.md" }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" "$bundleDir/LICENSE" }
+          if (Test-Path "setup.py") { Copy-Item "setup.py" "$bundleDir/setup.py" }
+          if (Test-Path "REQUIREMENTS.txt") { Copy-Item "REQUIREMENTS.txt" "$bundleDir/REQUIREMENTS.txt" }
+          if (Test-Path "run_dependency_analysis.py") { Copy-Item "run_dependency_analysis.py" "$bundleDir/run_dependency_analysis.py" }
           if (Test-Path "run_dependency_analysis.sh") { Copy-Item "run_dependency_analysis.sh" "$bundleDir/run_dependency_analysis.sh" }
           if (Test-Path "QuickStart_dependency_analysis_examples.sh") { Copy-Item "QuickStart_dependency_analysis_examples.sh" "$bundleDir/QuickStart_dependency_analysis_examples.sh" }
           if (Test-Path "run_dependency_analysis.ps1") { Copy-Item "run_dependency_analysis.ps1" "$bundleDir/run_dependency_analysis.ps1" }
