@@ -244,6 +244,8 @@ jobs:
           Write-Host "==========================================" -ForegroundColor Cyan
 
       # 8. Package release bundle (Unix: tar.gz)
+      # Note: When manually triggered (workflow_dispatch), TAG will be the branch name
+      #       When triggered by tag push, TAG will be the version (e.g., v1.0.0)
       - name: Create release package (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -310,8 +312,9 @@ jobs:
           # Create zip archive
           Compress-Archive -Force -Path $bundleDir -DestinationPath "dist/$pkgName-$tag-$host.zip"
 
-      # 10. Upload to GitHub Release
+      # 10. Upload to GitHub Release (only when triggered by tag push)
       - name: Upload release artifacts
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
