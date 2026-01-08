@@ -147,16 +147,25 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
     script_dir = Path(__file__).parent.resolve()
     os.chdir(script_dir)
 
+    # Determine if we're in interactive mode (any None values means interactive)
+    interactive_mode = (input_repo is None or output_dir is None or language is None)
+
     print("Dependency Analysis Configuration")
     print()
 
-    # Use provided binary path or prompt
+    # Use provided binary path, or use default in non-interactive mode, or prompt in interactive mode
     if binary_path:
         neodepends_bin = binary_path
         if not Path(neodepends_bin).exists():
             print(f"[ERROR] Binary not found at: {neodepends_bin}")
             return False
+    elif not interactive_mode:
+        # Non-interactive mode: use default binary path without prompting
+        if not Path(neodepends_bin).exists():
+            print(f"[ERROR] Binary not found at: {neodepends_bin}")
+            return False
     else:
+        # Interactive mode: prompt user
         print(f"NeoDepends binary: {neodepends_bin}")
         custom_path = input("Press Enter to use this path, or enter a custom path: ").strip()
         if custom_path:
