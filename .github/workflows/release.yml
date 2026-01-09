@@ -112,7 +112,7 @@ jobs:
             --quiet || exit 1
 
           # Verify Python output exists and is not empty
-          PYTHON_OUTPUT="test-output-python/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json"
+          PYTHON_OUTPUT="test-output-python/analysis-result.json"
           if [ ! -f "$PYTHON_OUTPUT" ]; then
             echo "ERROR: Python output file not created: $PYTHON_OUTPUT"
             exit 1
@@ -136,7 +136,7 @@ jobs:
             --quiet || exit 1
 
           # Verify Java output exists and is not empty
-          JAVA_OUTPUT="test-output-java/dependencies.depends.filtered.dv8-dsm-v3.json"
+          JAVA_OUTPUT="test-output-java/analysis-result.json"
           if [ ! -f "$JAVA_OUTPUT" ]; then
             echo "ERROR: Java output file not created: $JAVA_OUTPUT"
             exit 1
@@ -195,7 +195,7 @@ jobs:
           }
 
           # Verify Python output exists and is not empty
-          $pythonOutput = "test-output-python/dependencies.stackgraphs_ast.filtered.dv8-dsm-v3.json"
+          $pythonOutput = "test-output-python/analysis-result.json"
           if (-not (Test-Path $pythonOutput)) {
             Write-Host "ERROR: Python output file not created: $pythonOutput" -ForegroundColor Red
             exit 1
@@ -224,7 +224,7 @@ jobs:
           }
 
           # Verify Java output exists and is not empty
-          $javaOutput = "test-output-java/dependencies.depends.filtered.dv8-dsm-v3.json"
+          $javaOutput = "test-output-java/analysis-result.json"
           if (-not (Test-Path $javaOutput)) {
             Write-Host "ERROR: Java output file not created: $javaOutput" -ForegroundColor Red
             exit 1
