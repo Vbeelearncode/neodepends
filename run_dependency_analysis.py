@@ -379,6 +379,12 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
     print()
     print("Database and raw data:")
     print(f"  {data_folder}/")
+    print()
+    print("To view the results:")
+    print("  1. Open DV8 Explorer")
+    print("  2. Click 'Open a Matrix'")
+    print("  3. Select JSON format")
+    print(f"  4. Navigate to and select: {output_file}")
     print("=" * 70)
     print()
 
