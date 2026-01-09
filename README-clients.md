@@ -23,7 +23,8 @@ Analyze dependencies between entities (classes, functions, files) in your source
    - Choose language: `python` or `java`
 
 4. **View results**:
-   Results are saved as JSON files in the output directory you specified.
+   - Open `analysis-result.json` in the output directory to view the dependency dsm
+   - The `data/` folder contains database files and raw data
 
 ## macOS Users
 

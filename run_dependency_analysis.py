@@ -365,14 +365,8 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
         return False
 
     # Determine the output filename based on resolver
-    if model == "depends":
-        resolver_name = "depends"
-    elif model == "stackgraphs" and language == "python":
-        resolver_name = "stackgraphs_ast"
-    else:
-        resolver_name = "stackgraphs"
-
-    output_file = Path(output_dir) / f"dependencies.{resolver_name}.filtered.dv8-dsm-v3.json"
+    output_file = Path(output_dir) / "analysis-result.json"
+    data_folder = Path(output_dir) / "data"
 
     print()
     print("=" * 70)
@@ -380,8 +374,11 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
     print()
     print(f"Results saved to: {output_dir}")
     print()
-    print("To visualize results in DV8 Explorer, open:")
+    print("Main result file:")
     print(f"  {output_file}")
+    print()
+    print("Database and raw data:")
+    print(f"  {data_folder}/")
     print("=" * 70)
     print()
 
