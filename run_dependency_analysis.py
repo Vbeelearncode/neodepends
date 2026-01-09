@@ -87,6 +87,46 @@ def find_neodepends_binary():
         return default, False
 
 
+def remove_macos_quarantine(binary_path):
+    """
+    Remove macOS quarantine attribute from binary.
+
+    On macOS, downloaded files are quarantined by Gatekeeper and require user approval.
+    This function attempts to remove the quarantine attribute automatically.
+    """
+    if platform.system() != "Darwin":
+        return  # Only needed on macOS
+
+    try:
+        # Check if binary has quarantine attribute
+        result = subprocess.run(
+            ["xattr", "-p", "com.apple.quarantine", binary_path],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            # Quarantine attribute exists, try to remove it
+            print(f"[INFO] Removing macOS quarantine from: {binary_path}")
+            remove_result = subprocess.run(
+                ["xattr", "-d", "com.apple.quarantine", binary_path],
+                capture_output=True,
+                text=True
+            )
+
+            if remove_result.returncode == 0:
+                print("[OK] Quarantine removed successfully")
+            else:
+                print("[WARNING] Could not remove quarantine automatically")
+                print(f"         Run: xattr -d com.apple.quarantine {binary_path}")
+    except FileNotFoundError:
+        # xattr command not found (shouldn't happen on macOS, but handle it)
+        pass
+    except Exception as e:
+        # Silently ignore other errors - not critical
+        pass
+
+
 def check_java():
     """Check if Java is installed (needed for Java dependency analysis)"""
     try:
@@ -119,6 +159,8 @@ def run_dependency_checks():
     neodepends_path, found = find_neodepends_binary()
     if found:
         print(f"[OK] NeoDepends core binary found: {neodepends_path}")
+        # On macOS, remove quarantine attribute to avoid Gatekeeper blocking the binary
+        remove_macos_quarantine(neodepends_path)
     else:
         print("[ERROR] NeoDepends core binary not found")
         print()
