@@ -276,6 +276,10 @@ def run_neodepends(
 def run_python_enhancement(*, enhance_script: Path, db_path: Path, profile: str, logger: Any) -> None:
     _run_and_tee([_get_python_executable(), str(enhance_script), str(db_path), "--profile", profile], logger=logger)
 
+def run_override_detection(*, override_script: Path, db_path: Path, source_root: Path, logger: Any) -> None:
+    """Run the unified detect_overrides.py script (Python + Java override detection)."""
+    _run_and_tee([sys.executable, str(override_script), str(db_path), str(source_root)], logger=logger)
+
 def run_stackgraphs_false_positive_filter(
     *,
     filter_script: Path,
@@ -697,6 +701,7 @@ def export_dv8_file_level(
     if align_handcount and not edges:
         # Fallback: derive file->file coupling from any cross-file edge when Import edges are missing.
         # We keep the original kind if it is in the core set; otherwise skip it.
+        core_kinds = {"Import", "Extend", "Create", "Call", "Use", "Override"}
         core_kinds = {"Import", "Extend", "Create", "Call", "Use", "Implement"}
         for src_id, tgt_id, dep_kind in dep_rows:
             if dep_kind not in core_kinds:
@@ -1483,6 +1488,7 @@ def export_dv8_full_project(
     focus_file_names = pkg_files + root_files
 
     dep_rows = cur.execute("SELECT src, tgt, kind FROM deps").fetchall()
+    core_kinds = {"Import", "Extend", "Create", "Call", "Use", "Override"}
     core_kinds = {"Import", "Extend", "Create", "Call", "Use", "Implement"}
 
     # (1) File-level edges (file -> file) for overview within the same DSM.
@@ -1587,6 +1593,7 @@ def export_dv8_full_project(
             # - Create: Method -> Class
             # - Call: Method -> Method
             # - Use: Method -> Field
+            # - Override: Method -> Method
             if dep_kind == "Import" and not (src_kind == "File" and tgt_kind == "File"):
                 continue
             if dep_kind == "Extend" and not (src_kind == "Class" and tgt_kind == "Class"):
@@ -1596,6 +1603,8 @@ def export_dv8_full_project(
             if dep_kind == "Call" and not (src_kind in {"Method", "Function"} and tgt_kind in {"Method", "Function"}):
                 continue
             if dep_kind == "Use" and not (src_kind in {"Method", "Function"} and tgt_kind == "Field"):
+                continue
+            if dep_kind == "Override" and not (src_kind in {"Method", "Function"} and tgt_kind in {"Method", "Function"}):
                 continue
             if dep_kind == "Use" and _owner_class_entity(entities, src_id) is None:
                 # Handcount rules treat Use as "method/constructor uses its own fields" (self.field),
@@ -1768,6 +1777,7 @@ def export_dv8_per_file(
     cur = con.cursor()
 
     file_rows = cur.execute("SELECT id, name FROM entities WHERE kind = 'File' ORDER BY name").fetchall()
+    core_kinds = {"Import", "Extend", "Create", "Call", "Use", "Override"}
     core_kinds = {"Import", "Extend", "Create", "Call", "Use", "Implement"}
     for file_id, file_name in file_rows:
         if align_handcount and file_name.endswith("/__init__.py"):
@@ -1848,6 +1858,8 @@ def export_dv8_per_file(
                 if dep_kind == "Call" and not (src_ent.kind == "Method" and tgt_ent.kind == "Method"):
                     continue
                 if dep_kind == "Use" and not (src_ent.kind == "Method" and tgt_ent.kind == "Field"):
+                    continue
+                if dep_kind == "Override" and not (src_ent.kind == "Method" and tgt_ent.kind == "Method"):
                     continue
 
                 if dep_kind == "Call" and tgt_ent.kind == "Method" and tgt_ent.name in {"__init__", "__new__"}:
@@ -2108,6 +2120,13 @@ def main() -> int:
     )
     parser.add_argument("--no-enhance", action="store_true", help="Skip Python enhancement step")
     parser.add_argument(
+        "--override-script",
+        type=Path,
+        default=None,
+        help="Path to detect_overrides.py (default: auto-discovered next to this script)",
+    )
+    parser.add_argument("--no-override", action="store_true", help="Skip override detection step (Java @Override / Python @abstractmethod)")
+    parser.add_argument(
         "--include-external-targets",
         action="store_true",
         default=True,
@@ -2319,6 +2338,11 @@ def main() -> int:
         # Prefer the vendored script inside this repo for self-contained releases.
         local = Path(__file__).resolve().parent / "enhance_python_deps.py"
         enhance_script = local if local.exists() else (Path(__file__).resolve().parents[3] / "enhance_python_deps.py")
+
+    override_script = args.override_script
+    if override_script is None:
+        local = Path(__file__).resolve().parent / "detect_overrides.py"
+        override_script = local if local.exists() else (Path(__file__).resolve().parents[3] / "detect_overrides.py")
 
     filter_fp_script = args.filter_false_positives_script
     if filter_fp_script is None:
@@ -2609,6 +2633,16 @@ def main() -> int:
                     elapsed_enhance = time.time() - t2
             else:
                 elapsed_raw_export = 0.0
+
+                # Java override detection: detect @Override annotations and insert Override edges.
+                if not args.no_override and override_script.exists():
+                    logger.line(f"\n[OVERRIDE] Running Java override detection: {override_script}")
+                    run_override_detection(
+                        override_script=override_script,
+                        db_path=db_path,
+                        source_root=project_root,
+                        logger=logger,
+                    )
 
             t3 = time.time()
             export_dv8_per_file(
