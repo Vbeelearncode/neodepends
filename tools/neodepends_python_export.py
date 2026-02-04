@@ -278,7 +278,7 @@ def run_python_enhancement(*, enhance_script: Path, db_path: Path, profile: str,
 
 def run_override_detection(*, override_script: Path, db_path: Path, source_root: Path, logger: Any) -> None:
     """Run the unified detect_overrides.py script (Python + Java override detection)."""
-    _run_and_tee([sys.executable, str(override_script), str(db_path), str(source_root)], logger=logger)
+    _run_and_tee([_get_python_executable(), str(override_script), str(db_path), str(source_root)], logger=logger)
 
 def run_stackgraphs_false_positive_filter(
     *,
