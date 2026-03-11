@@ -1141,10 +1141,10 @@ def _structured_name(
     if ent is None:
         return None
 
-    # Java handcount uses a different path layout (no /CLASSES, no inner/subclass folders).
+    # Java uses a different path layout (no /CLASSES, no inner/subclass folders).
     if file_name.endswith(".java"):
         if ent.kind == "File":
-            return _handcount_file_node(file_name)
+            return _structured_file_node(file_name)
 
         owner_cls = ent if ent.kind == "Class" else _owner_class_entity(entities, entity_id)
         cls_name = owner_cls.name if owner_cls is not None else None
