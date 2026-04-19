@@ -24,6 +24,7 @@ pub enum Lang {
     Python,
     Ruby,
     TypeScript,
+    Tsx,
 }
 
 impl Lang {
@@ -67,6 +68,7 @@ impl Lang {
             Lang::Python => tree_sitter_python::language(),
             Lang::Ruby => tree_sitter_ruby::language(),
             Lang::TypeScript => tree_sitter_typescript::language_typescript(),
+            Lang::Tsx => tree_sitter_typescript::language_tsx(),
         }
     }
 
@@ -88,6 +90,7 @@ impl Lang {
             Lang::Python => &PYTHON,
             Lang::Ruby => &RUBY,
             Lang::TypeScript => &TYPESCRIPT,
+            Lang::Tsx => &TSX,
         }
     }
 }
@@ -111,6 +114,44 @@ impl LangConfig {
         let sgl = tsg.map(|x| Arc::new(StackGraphLanguage::from_str(language, &x).unwrap()));
         Self { pathspec, tagger, sgl, depends_lang }
     }
+}
+
+// The TSX tree-sitter grammar omits `type_assertion` (which conflicts with
+// JSX syntax), so the shared TSG must have its two `type_assertion`
+// references stripped before compiling against `language_tsx()`.
+fn tsg_for_tsx(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut lines = src.lines().peekable();
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim();
+
+        if trimmed == "(type_assertion)" {
+            continue;
+        }
+
+        if trimmed.starts_with("(type_assertion") && !trimmed.starts_with(";") {
+            let mut depth = line.matches('(').count() as i64 - line.matches(')').count() as i64;
+            let mut in_body = line.contains('{');
+            let mut brace_depth = line.matches('{').count() as i64 - line.matches('}').count() as i64;
+            while depth > 0 || !in_body || brace_depth > 0 {
+                match lines.next() {
+                    Some(next) => {
+                        depth += next.matches('(').count() as i64 - next.matches(')').count() as i64;
+                        if next.contains('{') {
+                            in_body = true;
+                        }
+                        brace_depth += next.matches('{').count() as i64 - next.matches('}').count() as i64;
+                    }
+                    None => break,
+                }
+            }
+            continue;
+        }
+
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 #[derive(Debug, Default, Clone)]
@@ -186,6 +227,7 @@ lazy_static! {
         table.insert_extension(Lang::Ruby, "rb");
         table.insert_extension(Lang::TypeScript, "ts");
         table.insert_special_file(Lang::TypeScript, "tsconfig.json");
+        table.insert_extension(Lang::Tsx, "tsx");
         table
     };
     static ref C: LangConfig = LangConfig::new(
@@ -247,8 +289,16 @@ lazy_static! {
     static ref TYPESCRIPT: LangConfig = LangConfig::new(
         tree_sitter_typescript::language_typescript(),
         LANG_TABLE.pathspec(Lang::TypeScript),
-        None,
+        Some(include_str!("../languages/typescript/tags.scm")),
         Some(include_str!("../languages/typescript/stack-graphs.tsg")),
+        None
+    );
+    static ref TSX_TSG: String = tsg_for_tsx(include_str!("../languages/typescript/stack-graphs.tsg"));
+    static ref TSX: LangConfig = LangConfig::new(
+        tree_sitter_typescript::language_tsx(),
+        LANG_TABLE.pathspec(Lang::Tsx),
+        Some(include_str!("../languages/typescript/tags.scm")),
+        Some(TSX_TSG.as_str()),
         None
     );
 }

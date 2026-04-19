@@ -1,0 +1,113 @@
+{
+  "resolver": "stackgraphs",
+  "option_tag": "stackgraphs_ast",
+  "stackgraphs_python_mode": "ast",
+  "dv8_hierarchy": "structured",
+  "filter_architecture": true,
+  "filter_stackgraphs_false_positives": false,
+  "used_filtered_raw_db": false,
+  "input_dir": "/Users/ivinmathew/Code/neodepends/examples/typescript-fullstack-sample",
+  "project_root": "/Users/ivinmathew/Code/neodepends/examples/typescript-fullstack-sample",
+  "focus_prefix": null,
+  "output_dir": "/Users/ivinmathew/Code/neodepends/output",
+  "db_path": "/Users/ivinmathew/Code/neodepends/output/data/dependencies.stackgraphs_ast.db",
+  "raw_db_path": null,
+  "filtered_raw_db_path": null,
+  "raw_output_dir": null,
+  "raw_dv8_dir": null,
+  "raw_filtered_output_dir": null,
+  "raw_filtered_dv8_dir": null,
+  "raw_file_level_dv8_path": null,
+  "raw_filtered_file_level_dv8_path": null,
+  "raw_full_dv8_dependency_root_path": null,
+  "dv8_dir": "/Users/ivinmathew/Code/neodepends/output/data/dv8_deps",
+  "full_dv8_dependency_path": "/Users/ivinmathew/Code/neodepends/output/analysis-result.json",
+  "file_level_dv8_path": null,
+  "raw_filtered_full_dv8_dependency_root_path": null,
+  "per_file_dbs_dir": "/Users/ivinmathew/Code/neodepends/output/data/per_file_dbs",
+  "data_dir": "/Users/ivinmathew/Code/neodepends/output/data",
+  "timings_sec": {
+    "neodepends": 0.7253758907318115,
+    "raw_dv8_export": 0.0,
+    "enhance": 0.0,
+    "dv8_export": 0.0019421577453613281,
+    "per_file_db_export": 0.00029087066650390625
+  },
+  "db_summary": {
+    "entities_total": 46,
+    "deps_total": 33,
+    "files_total": 20,
+    "classes_total": 0,
+    "methods_total": 0,
+    "fields_total": 7,
+    "deps_by_kind": {
+      "Call": 2,
+      "Import": 12,
+      "Use": 19
+    },
+    "breakdown": [
+      {
+        "src_kind": "Function",
+        "tgt_kind": "File",
+        "dep_kind": "Use",
+        "count": 13
+      },
+      {
+        "src_kind": "File",
+        "tgt_kind": "File",
+        "dep_kind": "Import",
+        "count": 10
+      },
+      {
+        "src_kind": "File",
+        "tgt_kind": "Function",
+        "dep_kind": "Use",
+        "count": 3
+      },
+      {
+        "src_kind": "Function",
+        "tgt_kind": "File",
+        "dep_kind": "Call",
+        "count": 2
+      },
+      {
+        "src_kind": "Field",
+        "tgt_kind": "File",
+        "dep_kind": "Use",
+        "count": 1
+      },
+      {
+        "src_kind": "Field",
+        "tgt_kind": "Interface",
+        "dep_kind": "Use",
+        "count": 1
+      },
+      {
+        "src_kind": "File",
+        "tgt_kind": "File",
+        "dep_kind": "Use",
+        "count": 1
+      },
+      {
+        "src_kind": "File",
+        "tgt_kind": "Function",
+        "dep_kind": "Import",
+        "count": 1
+      },
+      {
+        "src_kind": "File",
+        "tgt_kind": "Interface",
+        "dep_kind": "Import",
+        "count": 1
+      }
+    ]
+  },
+  "dv8_summary": {
+    "totals": {},
+    "per_file": {}
+  },
+  "raw_db_summary": null,
+  "raw_dv8_summary": null,
+  "filtered_raw_db_summary": null,
+  "raw_filtered_dv8_summary": null
+}

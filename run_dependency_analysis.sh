@@ -49,10 +49,10 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # Prompt for language
-read -p "Enter language (python or java): " LANGUAGE
+read -p "Enter language (python, java, or typescript): " LANGUAGE
 LANGUAGE=$(echo "$LANGUAGE" | tr '[:upper:]' '[:lower:]')  # Convert to lowercase
-if [ "$LANGUAGE" != "python" ] && [ "$LANGUAGE" != "java" ]; then
-    echo "Error: Language must be 'python' or 'java'"
+if [ "$LANGUAGE" != "python" ] && [ "$LANGUAGE" != "java" ] && [ "$LANGUAGE" != "typescript" ]; then
+    echo "Error: Language must be 'python', 'java', or 'typescript'"
     exit 1
 fi
 
@@ -75,12 +75,17 @@ fi
 # esac
 
 # Auto-select resolver based on language
+LANGS_ARG="$LANGUAGE"
 if [ "$LANGUAGE" == "python" ]; then
     MODEL="stackgraphs"
     echo "Auto-selected resolver: stackgraphs (for Python)"
 elif [ "$LANGUAGE" == "java" ]; then
     MODEL="depends"
     echo "Auto-selected resolver: depends (for Java)"
+elif [ "$LANGUAGE" == "typescript" ]; then
+    MODEL="stackgraphs"
+    LANGS_ARG="typescript,tsx"
+    echo "Auto-selected resolver: stackgraphs (for TypeScript/TSX)"
 else
     echo "Error: Unsupported language: $LANGUAGE"
     exit 1
@@ -91,7 +96,7 @@ CMD="python3 tools/neodepends_python_export.py"
 CMD="$CMD --neodepends-bin \"$NEODEPENDS_BIN\""
 CMD="$CMD --input \"$INPUT_REPO\""
 CMD="$CMD --output-dir \"$OUTPUT_DIR\""
-CMD="$CMD --langs $LANGUAGE"
+CMD="$CMD --langs $LANGS_ARG"
 CMD="$CMD --resolver $MODEL"
 
 # Add default flags
@@ -102,6 +107,10 @@ CMD="$CMD --filter-architecture"
 if [ "$LANGUAGE" == "python" ] && [ "$MODEL" == "stackgraphs" ]; then
     CMD="$CMD --stackgraphs-python-mode ast"
     CMD="$CMD --filter-stackgraphs-false-positives"
+fi
+
+if [ "$LANGUAGE" == "typescript" ] && [ "$MODEL" == "stackgraphs" ]; then
+    CMD="$CMD --stackgraphs-typescript-mode ast"
 fi
 
 echo ""
@@ -122,6 +131,8 @@ eval $CMD
 if [ "$MODEL" == "depends" ]; then
     RESOLVER_NAME="depends"
 elif [ "$MODEL" == "stackgraphs" ] && [ "$LANGUAGE" == "python" ]; then
+    RESOLVER_NAME="stackgraphs_ast"
+elif [ "$MODEL" == "stackgraphs" ] && [ "$LANGUAGE" == "typescript" ]; then
     RESOLVER_NAME="stackgraphs_ast"
 else
     RESOLVER_NAME="stackgraphs"

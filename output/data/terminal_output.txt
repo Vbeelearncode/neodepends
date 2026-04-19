@@ -1,0 +1,23 @@
+timestamp: 2026-04-19T14:56:58.634035
+resolver: stackgraphs
+project_root: /Users/ivinmathew/Code/neodepends/examples/typescript-fullstack-sample
+focus_path: /Users/ivinmathew/Code/neodepends/examples/typescript-fullstack-sample
+output: /Users/ivinmathew/Code/neodepends/output
+
+[CMD] /Users/ivinmathew/Code/neodepends/target/release/neodepends --version
+neodepends 0.0.12
+[CMD] /Users/ivinmathew/Code/neodepends/target/release/neodepends --force --input=/Users/ivinmathew/Code/neodepends/examples/typescript-fullstack-sample --output=/Users/ivinmathew/Code/neodepends/output/data/dependencies.stackgraphs_ast.db --format=sqlite --resources=entities,deps,contents --langs=typescript,tsx --stackgraphs --stackgraphs-python-mode=ast --stackgraphs-typescript-mode=ast
+[2026-04-19T18:56:58Z INFO  neodepends::filesystem] Project opened at: /Users/ivinmathew/Code/neodepends/examples/typescript-fullstack-sample
+[2026-04-19T18:56:58Z INFO  neodepends] Extracting and writing entities...
+[2026-04-19T18:56:59Z INFO  neodepends] Extracting and writing deps...
+[2026-04-19T18:56:59Z INFO  neodepends] Extracting and writing contents...
+[2026-04-19T18:56:59Z INFO  neodepends] Finished in 692ms
+
+[OK] Main DB: /Users/ivinmathew/Code/neodepends/output/data/dependencies.stackgraphs_ast.db
+[OK] Main DV8 DSM: /Users/ivinmathew/Code/neodepends/output/analysis-result.json
+
+[OK] Additional files in: /Users/ivinmathew/Code/neodepends/output/data
+  - DV8 per-file deps: /Users/ivinmathew/Code/neodepends/output/data/dv8_deps
+  - Per-file DBs: /Users/ivinmathew/Code/neodepends/output/data/per_file_dbs
+  - Run summary: /Users/ivinmathew/Code/neodepends/output/data/run_summary.json
+[OK] Terminal output: /Users/ivinmathew/Code/neodepends/output/data/terminal_output.txt

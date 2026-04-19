@@ -243,6 +243,7 @@ def run_neodepends(
     java_bin: Optional[str],
     xmx: Optional[str],
     stackgraphs_python_mode: str,
+    stackgraphs_typescript_mode: Optional[str],
     logger: Any,
 ) -> None:
     cmd: List[str] = [
@@ -267,6 +268,8 @@ def run_neodepends(
         cmd.append("--stackgraphs")
         if stackgraphs_python_mode:
             cmd.append(f"--stackgraphs-python-mode={stackgraphs_python_mode}")
+        if stackgraphs_typescript_mode:
+            cmd.append(f"--stackgraphs-typescript-mode={stackgraphs_typescript_mode}")
     else:
         raise ValueError(f"Unknown resolver: {resolver}")
 
@@ -2071,6 +2074,12 @@ def main() -> int:
         help="StackGraphs mode for Python: ast (default) classifies into Import/Extend/Call/Create when possible; use-only emits only Use edges",
     )
     parser.add_argument(
+        "--stackgraphs-typescript-mode",
+        choices=["ast", "use-only"],
+        default="ast",
+        help="StackGraphs mode for TypeScript/TSX: ast (default) classifies into Import/Annotation/Extend/Implement/Create/Call when possible; use-only emits only Use edges",
+    )
+    parser.add_argument(
         "--filter-stackgraphs-false-positives",
         action="store_true",
         default=False,
@@ -2217,7 +2226,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        choices=["automatic", "default", "python", "java", "manual"],
+        choices=["automatic", "default", "python", "java", "typescript", "manual"],
         default="manual",
         help=(
             "Configuration preset. "
@@ -2225,6 +2234,7 @@ def main() -> int:
             "'default': Use --langs flag to determine preset (requires explicit --langs). "
             "'python': Python best practices (stackgraphs + ast + structured + filtering). "
             "'java': Java best practices (depends + structured + filtering). "
+            "'typescript': TypeScript/TSX best practices (stackgraphs + ast, no post-processing). "
             "'manual': Specify all options explicitly (default). "
             "Explicit flags override preset values."
         ),
@@ -2233,7 +2243,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Apply config presets
-    if args.config in ("automatic", "default", "python", "java"):
+    if args.config in ("automatic", "default", "python", "java", "typescript"):
         preset_type = args.config
 
         # Auto-detect language from file extensions for 'automatic' preset
@@ -2246,14 +2256,20 @@ def main() -> int:
                     preset_type = "python"
                 elif input_path.suffix == ".java":
                     preset_type = "java"
+                elif input_path.suffix in (".ts", ".tsx"):
+                    preset_type = "typescript"
                 else:
                     preset_type = "python"  # Fallback
             else:
                 # Directory - scan for predominant language
                 py_count = sum(1 for _ in input_path.rglob("*.py"))
                 java_count = sum(1 for _ in input_path.rglob("*.java"))
-                if java_count > py_count:
-                    preset_type = "java"
+                ts_count = sum(1 for _ in input_path.rglob("*.ts")) + \
+                           sum(1 for _ in input_path.rglob("*.tsx"))
+                counts = {"python": py_count, "java": java_count, "typescript": ts_count}
+                best_lang = max(counts, key=counts.get)
+                if counts[best_lang] > 0:
+                    preset_type = best_lang
                 else:
                     preset_type = "python"  # Default to Python
 
@@ -2265,11 +2281,14 @@ def main() -> int:
                 preset_type = "python"
             elif "java" in langs_list:
                 preset_type = "java"
+            elif "typescript" in langs_list or "tsx" in langs_list:
+                preset_type = "typescript"
             else:
                 # Error: --config default requires explicit --langs
                 raise ValueError(
                     "--config default requires explicit --langs flag. "
-                    "Use '--langs python' or '--langs java', or use '--config automatic' for auto-detection."
+                    "Use '--langs python', '--langs java', or '--langs typescript', "
+                    "or use '--config automatic' for auto-detection."
                 )
 
         # Apply Python preset
@@ -2286,6 +2305,22 @@ def main() -> int:
         # Apply Java preset
         elif preset_type == "java":
             # args.resolver already defaults to "depends"
+            # dv8_hierarchy already defaults to "structured"
+            args.align_handcount = True  # Enable --filter-architecture
+
+        # Apply TypeScript preset
+        elif preset_type == "typescript":
+            if args.resolver == "depends":  # User didn't change default
+                args.resolver = "stackgraphs"
+            if hasattr(args, "stackgraphs_typescript_mode") and \
+                    args.stackgraphs_typescript_mode == "use-only":
+                args.stackgraphs_typescript_mode = "ast"
+            langs_list = [x.strip().lower() for x in args.langs.split(",") if x.strip()] \
+                if args.langs else []
+            if not langs_list:
+                args.langs = "typescript,tsx"
+            elif "typescript" in langs_list and "tsx" not in langs_list:
+                args.langs = args.langs + ",tsx"
             # dv8_hierarchy already defaults to "structured"
             args.align_handcount = True  # Enable --filter-architecture
 
@@ -2482,6 +2517,7 @@ def main() -> int:
                 java_bin=args.depends_java,
                 xmx=args.depends_xmx,
                 stackgraphs_python_mode=stackgraphs_mode,
+                stackgraphs_typescript_mode=getattr(args, "stackgraphs_typescript_mode", None),
                 logger=logger,
             )
             elapsed_neodepends = time.time() - t1

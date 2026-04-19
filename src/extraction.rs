@@ -19,6 +19,7 @@ use crate::filesystem::FileSystem;
 use crate::languages::Lang;
 use crate::resolution::ResolverManager;
 use crate::spec::Filespec;
+use crate::stackgraphs::is_typescript_false_positive_with_sets;
 use crate::tagging::EntitySet;
 
 pub struct Extractor {
@@ -64,7 +65,17 @@ impl Extractor {
         self.resolver
             .resolve(&self.fs, &files)
             .into_par_iter()
-            .map(move |d| d.to_entity_dep(&self.entity_sets.read().unwrap()).unwrap())
+            .filter_map(move |d| {
+                let lang = Lang::of(&d.src.file_key.filename);
+                let entity_sets = self.entity_sets.read().unwrap();
+                let entity_dep = d.to_entity_dep(&entity_sets).unwrap();
+                if let Some(lang) = lang {
+                    if is_typescript_false_positive_with_sets(lang, &entity_dep, &entity_sets) {
+                        return None;
+                    }
+                }
+                Some(entity_dep)
+            })
             .filter(|d| !d.is_loop())
     }
 

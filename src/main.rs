@@ -36,6 +36,7 @@ use crate::resolution::ResolverFactory;
 use crate::spec::Filespec;
 use crate::stackgraphs::StackGraphsResolverFactory;
 use crate::stackgraphs::StackGraphsPythonMode;
+use crate::stackgraphs::StackGraphsTypeScriptMode;
 
 mod core;
 mod depends;
@@ -300,6 +301,13 @@ struct ResolverOpts {
     /// - use-only: old behavior, emit only Use edges for StackGraphs
     #[arg(long, default_value = "ast", value_parser = strum_parser!(StackGraphsPythonMode))]
     stackgraphs_python_mode: StackGraphsPythonMode,
+
+    /// StackGraphs output mode for TypeScript and TSX.
+    ///
+    /// - ast: classify StackGraphs references using TypeScript AST context into Import/Annotation/Extend/Implement/Create/Call when possible (default)
+    /// - use-only: old behavior, emit only Use edges for StackGraphs
+    #[arg(long, default_value = "ast", value_parser = strum_parser!(StackGraphsTypeScriptMode))]
+    stackgraphs_typescript_mode: StackGraphsTypeScriptMode,
 }
 
 fn main() -> Result<()> {
@@ -321,7 +329,12 @@ fn main() -> Result<()> {
     };
 
     let mut extractor = Extractor::new(fs.clone(), file_level);
-    extractor.set_resolver(create_resolver(&matches, depends_config, opts.resolver_opts.stackgraphs_python_mode));
+    extractor.set_resolver(create_resolver(
+        &matches,
+        depends_config,
+        opts.resolver_opts.stackgraphs_python_mode,
+        opts.resolver_opts.stackgraphs_typescript_mode,
+    ));
 
     let mut structure_commits = try_parse_revspecs(&fs, &opts.structure)?;
     let history_commits = try_parse_revspecs(&fs, &opts.revspecs)?;
@@ -482,9 +495,20 @@ fn try_read_file_revspecs(fs: &FileSystem, path: &str) -> Result<Vec<PseudoCommi
     Ok(ids)
 }
 
-fn create_resolver(matches: &ArgMatches, config: DependsConfig, stackgraphs_python_mode: StackGraphsPythonMode) -> ResolverManager {
+fn create_resolver(
+    matches: &ArgMatches,
+    config: DependsConfig,
+    stackgraphs_python_mode: StackGraphsPythonMode,
+    stackgraphs_typescript_mode: StackGraphsTypeScriptMode,
+) -> ResolverManager {
     let mut map: HashMap<&str, Box<dyn ResolverFactory>> = HashMap::new();
-    map.insert("stackgraphs", Box::new(StackGraphsResolverFactory::new(stackgraphs_python_mode)));
+    map.insert(
+        "stackgraphs",
+        Box::new(StackGraphsResolverFactory::new(
+            stackgraphs_python_mode,
+            stackgraphs_typescript_mode,
+        )),
+    );
     map.insert("depends", Box::new(DependsResolverFactory::new(config)));
     ResolverManager::new(sort_by_flag_index(matches, map))
 }

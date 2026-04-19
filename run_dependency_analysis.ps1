@@ -40,10 +40,10 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 # Prompt for language
-$Language = Read-Host "Enter language (python or java)"
+$Language = Read-Host "Enter language (python, java, or typescript)"
 $Language = $Language.ToLower().Trim()
-if ($Language -ne "python" -and $Language -ne "java") {
-    Write-Host "Error: Language must be 'python' or 'java'" -ForegroundColor Red
+if ($Language -ne "python" -and $Language -ne "java" -and $Language -ne "typescript") {
+    Write-Host "Error: Language must be 'python', 'java', or 'typescript'" -ForegroundColor Red
     exit 1
 }
 
@@ -67,12 +67,17 @@ if ($Language -ne "python" -and $Language -ne "java") {
 # }
 
 # Auto-select resolver based on language
+$LangsArg = $Language
 if ($Language -eq "python") {
     $Model = "stackgraphs"
     Write-Host "Auto-selected resolver: stackgraphs (for Python)"
 } elseif ($Language -eq "java") {
     $Model = "depends"
     Write-Host "Auto-selected resolver: depends (for Java)"
+} elseif ($Language -eq "typescript") {
+    $Model = "stackgraphs"
+    $LangsArg = "typescript,tsx"
+    Write-Host "Auto-selected resolver: stackgraphs (for TypeScript/TSX)"
 } else {
     Write-Host "Error: Unsupported language: $Language" -ForegroundColor Red
     exit 1
@@ -84,7 +89,7 @@ $Args = @(
     "--neodepends-bin", $NeodependsBin,
     "--input", $InputRepo,
     "--output-dir", $OutputDir,
-    "--langs", $Language,
+    "--langs", $LangsArg,
     "--resolver", $Model,
     "--dv8-hierarchy", "structured",
     "--filter-architecture"
@@ -94,6 +99,10 @@ $Args = @(
 if ($Language -eq "python" -and $Model -eq "stackgraphs") {
     $Args += "--stackgraphs-python-mode", "ast"
     $Args += "--filter-stackgraphs-false-positives"
+}
+
+if ($Language -eq "typescript" -and $Model -eq "stackgraphs") {
+    $Args += "--stackgraphs-typescript-mode", "ast"
 }
 
 Write-Host ""
@@ -114,6 +123,8 @@ Write-Host ""
 if ($Model -eq "depends") {
     $ResolverName = "depends"
 } elseif ($Model -eq "stackgraphs" -and $Language -eq "python") {
+    $ResolverName = "stackgraphs_ast"
+} elseif ($Model -eq "stackgraphs" -and $Language -eq "typescript") {
     $ResolverName = "stackgraphs_ast"
 } else {
     $ResolverName = "stackgraphs"

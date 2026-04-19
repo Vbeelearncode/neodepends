@@ -272,14 +272,15 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
 
     # Use provided language or prompt
     if language is None:
-        language = input("Enter language (python or java): ").strip().lower()
+        language = input("Enter language (python, java, or typescript): ").strip().lower()
     else:
         language = language.lower()
-    if language not in ("python", "java"):
-        print("[ERROR] Language must be 'python' or 'java'")
+    if language not in ("python", "java", "typescript"):
+        print("[ERROR] Language must be 'python', 'java', or 'typescript'")
         return False
 
     # Auto-select resolver based on language
+    langs_arg = language
     if language == "python":
         model = "stackgraphs"
         print("Auto-selected resolver: stackgraphs (for Python)")
@@ -294,6 +295,10 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
             print("[ERROR] Java is required for Java dependency analysis")
             print("        Please install Java 11 or higher and try again")
             return False
+    elif language == "typescript":
+        model = "stackgraphs"
+        langs_arg = "typescript,tsx"
+        print("Auto-selected resolver: stackgraphs (for TypeScript/TSX)")
     else:
         print(f"[ERROR] Unsupported language: {language}")
         return False
@@ -303,7 +308,7 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
         "--neodepends-bin", neodepends_bin,
         "--input", input_repo,
         "--output-dir", output_dir,
-        "--langs", language,
+        "--langs", langs_arg,
         "--resolver", model,
         "--dv8-hierarchy", "structured",
         "--filter-architecture"
@@ -314,6 +319,11 @@ def run_analysis(neodepends_bin, input_repo=None, output_dir=None, language=None
         args.extend([
             "--stackgraphs-python-mode", "ast",
             "--filter-stackgraphs-false-positives"
+        ])
+
+    if language == "typescript" and model == "stackgraphs":
+        args.extend([
+            "--stackgraphs-typescript-mode", "ast",
         ])
 
     print()
@@ -407,8 +417,8 @@ Examples:
     parser.add_argument('--output', '-o', dest='output_dir',
                         help='Output directory for results')
     parser.add_argument('--language', '-l', dest='language',
-                        choices=['python', 'java'],
-                        help='Language to analyze (python or java)')
+                        choices=['python', 'java', 'typescript'],
+                        help='Language to analyze (python, java, or typescript). The typescript choice scans both .ts and .tsx files.')
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Suppress header and non-error output')
 

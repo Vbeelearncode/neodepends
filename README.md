@@ -79,13 +79,14 @@ The script will prompt you for:
 - **NeoDepends binary path** - Press Enter to use `./neodepends` (default) or provide a custom path
 - **Input repository path** - Path to your project directory (tab completion enabled)
 - **Output directory path** - Where to save results (tab completion enabled)
-- **Language** - `python` or `java` (resolver auto-selected based on language)
+- **Language** - `python`, `java`, or `typescript` (resolver auto-selected based on language). The `typescript` choice scans both `.ts` and `.tsx` files.
 
 The script automatically applies recommended settings:
 
 - Structured DV8 hierarchy for easy navigation
 - Architecture filtering for cleaner results
 - For Python with StackGraphs: AST-based classification and false positive filtering
+- For TypeScript/TSX: Rust-side AST classification (Import/Annotation/Extend/Implement/Create/Call) and false-positive filtering — all performed by the core binary with no Python post-processing
 
 Example session:
 
@@ -94,7 +95,7 @@ $ ./run_dependency_analysis.sh
 Enter neodepends binary path [default: ./neodepends]:
 Enter input repository path: examples/TrainTicketSystem_TOY_PYTHON_FIRST/tts
 Enter output directory path: ./test-package
-Enter language (python or java): python
+Enter language (python, java, or typescript): python
 Auto-selected resolver: stackgraphs (for Python)
 ...
 ```

@@ -1,0 +1,106 @@
+{
+  "@schemaVersion": "1.0",
+  "name": "dependencies (full)",
+  "variables": [
+    "src/client/createView.tsx/functions/createView (Function)",
+    "src/client/createView.tsx/self (File)",
+    "src/client/index.ts/self (File)",
+    "src/common/App.tsx/functions/App (Function)",
+    "src/common/App.tsx/self (File)",
+    "src/common/actions.ts/functions/addTodo (Function)",
+    "src/common/actions.ts/functions/removeTodo (Function)",
+    "src/common/actions.ts/functions/updateTodo (Function)",
+    "src/common/actions.ts/self (File)",
+    "src/common/components/CenterInfo.tsx/functions/CenterInfo (Function)",
+    "src/common/components/CenterInfo.tsx/self (File)",
+    "src/common/components/index.ts/self (File)",
+    "src/common/index.ts/self (File)",
+    "src/common/pages/HomePage.tsx/functions/HomePage (Function)",
+    "src/common/pages/HomePage.tsx/self (File)",
+    "src/common/pages/NotFoundPage.tsx/functions/NotFoundPage (Function)",
+    "src/common/pages/NotFoundPage.tsx/self (File)",
+    "src/common/pages/TickerPage.tsx/functions/TickerPage (Function)",
+    "src/common/pages/TickerPage.tsx/self (File)",
+    "src/common/pages/TodoPage.tsx/functions/AddTodo (Function)",
+    "src/common/pages/TodoPage.tsx/functions/AvailableTodos (Function)",
+    "src/common/pages/TodoPage.tsx/functions/TodoPage (Function)",
+    "src/common/pages/TodoPage.tsx/self (File)",
+    "src/common/state.ts/functions/reducer (Function)",
+    "src/common/state.ts/self (File)",
+    "src/common/types/index.ts/self (File)",
+    "src/common/types/state.ts/self (File)",
+    "src/common/types/todo.ts/self (File)",
+    "src/server/createView.tsx/functions/createView (Function)",
+    "src/server/createView.tsx/self (File)",
+    "src/server/index.ts/self (File)",
+    "src/server/renderIndex.ts/functions/renderIndex (Function)",
+    "src/server/renderIndex.ts/self (File)",
+    "src/server/retrieveAsset.ts/self (File)",
+    "tsconfig.json/self (File)"
+  ],
+  "cells": [
+    {
+      "src": 8,
+      "dest": 25,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 12,
+      "dest": 24,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 24,
+      "dest": 8,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 24,
+      "dest": 25,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 25,
+      "dest": 26,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 25,
+      "dest": 27,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 26,
+      "dest": 27,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 30,
+      "dest": 32,
+      "values": {
+        "Import": 1.0
+      }
+    },
+    {
+      "src": 30,
+      "dest": 33,
+      "values": {
+        "Import": 1.0
+      }
+    }
+  ]
+}
