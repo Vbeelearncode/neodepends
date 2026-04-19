@@ -97,13 +97,18 @@ impl<T: Copy + Eq + Hash> SparseVec<T> {
         let entry_a = self.entries[indices.start];
         let entry_z = self.entries[indices.end - 1];
 
-        let replacements = [
-            (entry_a.key.start, start - 1, entry_a.value),
-            (start, end, value),
-            (end + 1, entry_z.key.end, entry_z.value),
-        ]
-        .into_iter()
-        .filter_map(Entry::try_from_triple);
+        let left = if start > entry_a.key.start {
+            Entry::try_from_triple((entry_a.key.start, start - 1, entry_a.value))
+        } else {
+            None
+        };
+        let right = if end < entry_z.key.end {
+            Entry::try_from_triple((end + 1, entry_z.key.end, entry_z.value))
+        } else {
+            None
+        };
+
+        let replacements = [left, Some(Entry::new(key, value)), right].into_iter().flatten();
 
         self.entries.splice(indices, replacements);
     }
