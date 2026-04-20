@@ -24,11 +24,11 @@ lazy_static = "1.4.0"
 log = "0.4.17"
 lsp-positions = "0.3"
 rayon = "1.10.0"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
+rusqlite = { version = "0.28", features = ["bundled"] }
 serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
 sha1 = "0.10.6"
-stack-graphs = { version = "0.13", features = ["bincode"] }
+stack-graphs = { version = "0.13", features = ["storage"] }
 strum = { version = "0.26.1", features = ["derive"] }
 strum_macros = "0.26"
 subprocess = "0.2.9"
@@ -46,3 +46,9 @@ tree-sitter-ruby = "0.20"
 tree-sitter-stack-graphs = "0.8.1"
 tree-sitter-typescript = "=0.20.2"
 walkdir = "2.4.0"
+
+[patch.crates-io]
+# Fixes OOB panic in Database::get_incoming_path_degree: incoming_paths arena may not
+# cover a node handle when the stitcher queries a node that was never an end_node of any
+# loaded path. Fix: use .get() so out-of-range handles return Degree::Zero instead of panicking.
+stack-graphs = { git = "https://github.com/SoftwareDesignResearch/stack-graphs.git", rev = "bb444ea" }
