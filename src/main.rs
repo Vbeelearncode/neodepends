@@ -39,6 +39,7 @@ use crate::stackgraphs::StackGraphsPythonMode;
 
 mod core;
 mod depends;
+mod enhancement;
 mod extraction;
 mod filesystem;
 mod languages;
@@ -300,6 +301,29 @@ struct ResolverOpts {
     /// - use-only: old behavior, emit only Use edges for StackGraphs
     #[arg(long, default_value = "ast", value_parser = strum_parser!(StackGraphsPythonMode))]
     stackgraphs_python_mode: StackGraphsPythonMode,
+
+    /// Per-reference stitching timeout for Stack Graphs (seconds).
+    ///
+    /// Cancels stitching for a single reference node if it exceeds this duration.
+    /// Paths found before the cutoff are preserved; only the remaining tail is lost.
+    /// Without this flag, stitching runs unbounded (may spike to tens of GB on
+    /// deeply-connected graphs). Set to 3–5 to suppress large memory spikes at
+    /// the cost of some deps on pathological references.
+    #[arg(long)]
+    stackgraphs_ref_timeout_secs: Option<u64>,
+
+    /// Skip all dependency enhancement (query-driven edge classification and heuristics).
+    ///
+    /// Edges remain as raw resolver output. Overrides --heuristics.
+    #[arg(long)]
+    no_enhance: bool,
+
+    /// Enable heuristic dependency enhancement (off by default).
+    ///
+    /// Recovers patterns the resolver misses: Java constructor field assignments,
+    /// super()/this() delegation, @Override; Python dataclass field types.
+    #[arg(long)]
+    heuristics: bool,
 }
 
 fn main() -> Result<()> {
@@ -320,8 +344,8 @@ fn main() -> Result<()> {
         _ => opts.file_level,
     };
 
-    let mut extractor = Extractor::new(fs.clone(), file_level);
-    extractor.set_resolver(create_resolver(&matches, depends_config, opts.resolver_opts.stackgraphs_python_mode));
+    let mut extractor = Extractor::new(fs.clone(), file_level, opts.resolver_opts.no_enhance, opts.resolver_opts.heuristics);
+    extractor.set_resolver(create_resolver(&matches, depends_config, opts.resolver_opts.stackgraphs_python_mode, opts.resolver_opts.stackgraphs_ref_timeout_secs));
 
     let mut structure_commits = try_parse_revspecs(&fs, &opts.structure)?;
     let history_commits = try_parse_revspecs(&fs, &opts.revspecs)?;
@@ -482,9 +506,9 @@ fn try_read_file_revspecs(fs: &FileSystem, path: &str) -> Result<Vec<PseudoCommi
     Ok(ids)
 }
 
-fn create_resolver(matches: &ArgMatches, config: DependsConfig, stackgraphs_python_mode: StackGraphsPythonMode) -> ResolverManager {
+fn create_resolver(matches: &ArgMatches, config: DependsConfig, stackgraphs_python_mode: StackGraphsPythonMode, stackgraphs_ref_timeout_secs: Option<u64>) -> ResolverManager {
     let mut map: HashMap<&str, Box<dyn ResolverFactory>> = HashMap::new();
-    map.insert("stackgraphs", Box::new(StackGraphsResolverFactory::new(stackgraphs_python_mode)));
+    map.insert("stackgraphs", Box::new(StackGraphsResolverFactory::new(stackgraphs_python_mode, stackgraphs_ref_timeout_secs)));
     map.insert("depends", Box::new(DependsResolverFactory::new(config)));
     ResolverManager::new(sort_by_flag_index(matches, map))
 }
