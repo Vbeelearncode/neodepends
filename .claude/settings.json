@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//Users/ivinmathew/.claude/plans/**)",
-      "Bash(cargo check *)"
-    ]
-  }
-}

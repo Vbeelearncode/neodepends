@@ -684,6 +684,7 @@ pub fn is_typescript_false_positive(
     dep: &EntityDep,
     src_entity: &Entity,
     tgt_entity: &Entity,
+    entity_sets: Option<&HashMap<FileKey, EntitySet>>,
 ) -> bool {
     if !matches!(lang, Lang::TypeScript | Lang::Tsx) {
         return false;
@@ -703,21 +704,58 @@ pub fn is_typescript_false_positive(
         return true;
     }
 
+    let dep_row = match dep.position {
+        PartialPosition::Row(r) => r,
+        PartialPosition::Whole(p) => p.row,
+    };
+
     if src_is_member
         && tgt_is_member
         && src_entity.parent_id.is_some()
         && src_entity.parent_id == tgt_entity.parent_id
         && src_entity.id != tgt_entity.id
+        && dep_row == src_entity.code.start.row
     {
-        let dep_row = match dep.position {
-            PartialPosition::Row(r) => r,
-            PartialPosition::Whole(p) => p.row,
-        };
-        if dep_row == src_entity.code.start.row {
-            return true;
+        return true;
+    }
+    
+    let src_is_declarable = matches!(
+        src_entity.kind,
+        EntityKind::Function | EntityKind::Method | EntityKind::Constructor | EntityKind::Field
+    );
+    if src_is_declarable
+        && tgt_entity.kind == EntityKind::File
+        && dep_row == src_entity.code.start.row
+    {
+        if let Some(sets) = entity_sets {
+            if is_ancestor(src_entity, tgt_entity.id, sets) {
+                return true;
+            }
         }
     }
 
+    false
+}
+
+fn is_ancestor(
+    child: &Entity,
+    ancestor_id: crate::core::EntityId,
+    entity_sets: &HashMap<FileKey, EntitySet>,
+) -> bool {
+    let mut current = child.parent_id;
+    while let Some(pid) = current {
+        if pid == ancestor_id {
+            return true;
+        }
+        let mut next = None;
+        for set in entity_sets.values() {
+            if let Some(e) = set.get_entity(&pid) {
+                next = e.parent_id;
+                break;
+            }
+        }
+        current = next;
+    }
     false
 }
 
@@ -747,7 +785,7 @@ pub fn is_typescript_false_positive_with_sets(
         }
     }
     match (src_entity, tgt_entity) {
-        (Some(src), Some(tgt)) => is_typescript_false_positive(lang, dep, src, tgt),
+        (Some(src), Some(tgt)) => is_typescript_false_positive(lang, dep, src, tgt, Some(entity_sets)),
         _ => false,
     }
 }

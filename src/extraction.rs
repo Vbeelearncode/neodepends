@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Mutex;
 use std::sync::RwLock;
 
 use counter::Counter;
@@ -62,6 +63,7 @@ impl Extractor {
     pub fn extract_deps(&self, spec: &Filespec) -> impl ParallelIterator<Item = EntityDep> + '_ {
         let files = self.fs.list(spec);
         self.ensure_entity_sets(files.files().iter().cloned().collect());
+        let seen: Mutex<HashSet<EntityDep>> = Mutex::new(HashSet::new());
         self.resolver
             .resolve(&self.fs, &files)
             .into_par_iter()
@@ -72,6 +74,11 @@ impl Extractor {
                 if let Some(lang) = lang {
                     if is_typescript_false_positive_with_sets(lang, &entity_dep, &entity_sets) {
                         return None;
+                    }
+                    if matches!(lang, Lang::TypeScript | Lang::Tsx) {
+                        if !seen.lock().unwrap().insert(entity_dep.clone()) {
+                            return None;
+                        }
                     }
                 }
                 Some(entity_dep)
