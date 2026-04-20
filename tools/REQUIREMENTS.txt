@@ -1,6 +1,0 @@
-Python tools in `tools/` only use the Python standard library.
-
-Requirements:
-- Python 3.11+ installed
-
-No `pip install` step is required.
