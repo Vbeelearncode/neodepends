@@ -158,31 +158,32 @@ impl Resolver for StackGraphsResolver {
             graph.iter_nodes().filter(|&n| graph[n].is_reference()).collect()
         };
 
+        // Pre-load all paths so incoming_paths is fully populated before stitching.
+        // This ensures get_incoming_path_degree returns correct values, preventing
+        // incorrect cycle-detection behavior in the stitcher.
+        if let Err(e) = reader.load_all_paths(&stack_graphs::NoCancellation) {
+            log::warn!("stack-graphs: failed to pre-load paths: {e}");
+        }
+
         let commit_id = self.commit_id;
         let lang = self.lang;
         let py_mode = self.py_mode;
         let mut deps: Vec<FileDep> = Vec::new();
-        let diag_config = StitcherConfig::default().with_collect_stats(true);
+        let diag_config = StitcherConfig::default();
         let ref_timeout = self.ref_timeout;
-        let mut total_complete_paths = 0usize;
 
-        // Stitch one reference at a time so the PartialPaths arena is bounded per query.
-        // clear_paths() resets in-memory path state between references without reloading graphs.
+        // Stitch one reference at a time to bound intermediate path memory per query.
+        // All base paths are already pre-loaded by load_all_paths, so lazy-loading
+        // during stitching is a no-op and incoming_paths is fully populated.
         for (ref_idx, &ref_node) in all_reference_nodes.iter().enumerate() {
-            let mut path_count = 0usize;
-            let t0 = std::time::Instant::now();
             let cancellation = stack_graphs::CancelAfterDuration::new(ref_timeout);
-
             let stitching_res = ForwardPartialPathStitcher::find_all_complete_partial_paths(
                 &mut reader,
                 std::iter::once(ref_node),
                 diag_config,
                 &cancellation,
                 |graph, _partials, path| {
-                    path_count += 1;
-                    let get_filename = |n: Handle<Node>| {
-                        graph[graph[n].file().unwrap()].name().to_string()
-                    };
+                    let get_filename = |n: Handle<Node>| graph[graph[n].file().unwrap()].name().to_string();
                     let get_position = |n: Handle<Node>| {
                         PartialPosition::Whole(Span::from_lsp(&graph.source_info(n).unwrap().span).start)
                     };
@@ -198,7 +199,7 @@ impl Resolver for StackGraphsResolver {
                     let tgt_byte = end_node_pos.byte().unwrap_or(0);
 
                     let kind = match py_mode {
-                        StackGraphsPythonMode::UseOnly => DepKind::Use,
+                        StackGraphsPythonMode::UseOnly => Some(DepKind::Use),
                         StackGraphsPythonMode::Ast => classify_stackgraph_dep(
                             lang,
                             &src_filename,
@@ -210,12 +211,12 @@ impl Resolver for StackGraphsResolver {
                             &mut parse_cache,
                         ),
                     };
+                    let Some(kind) = kind else {
+                        return;
+                    };
 
                     // Skip edges involving files outside the scan scope (e.g. stdlib refs).
-                    let (Some(src_file_key), Some(tgt_file_key)) = (
-                        file_keys.get(&src_filename),
-                        file_keys.get(&tgt_filename),
-                    ) else {
+                    let (Some(src_file_key), Some(tgt_file_key)) = (file_keys.get(&src_filename), file_keys.get(&tgt_filename)) else {
                         return;
                     };
 
@@ -228,41 +229,16 @@ impl Resolver for StackGraphsResolver {
                     ));
                 },
             );
-
-            let elapsed_ms = t0.elapsed().as_millis();
-            total_complete_paths += path_count;
-
-            let cancelled = stitching_res.is_err();
-            if cancelled || path_count > 500 || elapsed_ms > 200 {
+            if stitching_res.is_err() {
                 let (graph, _, _) = reader.get();
                 let src_file = graph[ref_node].file()
                     .map(|f| graph[f].name().to_string())
                     .unwrap_or_else(|| "<unknown>".to_string());
-                let src_line = graph.source_info(ref_node)
-                    .map(|si| si.span.start.line)
-                    .unwrap_or(0);
-                let phases = if let Ok(ref stats) = stitching_res {
-                    stats.queued_paths_per_phase.count()
-                } else {
-                    0
-                };
-                if cancelled {
-                    log::warn!(
-                        "[SG] ref #{ref_idx:05} CANCELLED after {elapsed_ms}ms ({path_count} paths kept)  \
-                         phases={phases}  file={src_file}:{src_line}"
-                    );
-                } else {
-                    eprintln!(
-                        "[SG] ref #{ref_idx:05}  paths={path_count:>8}  time={elapsed_ms:>6}ms  \
-                         phases={phases}  file={src_file}:{src_line}",
-                    );
-                }
+                let src_line = graph.source_info(ref_node).map(|si| si.span.start.line).unwrap_or(0);
+                log::warn!("[SG] ref #{ref_idx:05} CANCELLED  file={src_file}:{src_line}");
             }
-
-            reader.clear_paths();
         }
 
-        eprintln!("[SG] resolve complete: {} refs, {} total complete paths", all_reference_nodes.len(), total_complete_paths);
         deps
     }
 }
@@ -289,9 +265,7 @@ pub struct StackGraphsResolverFactory {
 
 impl StackGraphsResolverFactory {
     pub fn new(py_mode: StackGraphsPythonMode, ref_timeout_secs: Option<u64>) -> Self {
-        let ref_timeout = ref_timeout_secs
-            .map(Duration::from_secs)
-            .unwrap_or(Duration::MAX);
+        let ref_timeout = ref_timeout_secs.map(Duration::from_secs).unwrap_or(Duration::MAX);
         Self { py_mode, ref_timeout }
     }
 }
@@ -426,23 +400,36 @@ fn python_in_isinstance_arg(node: TsNode, src: &[u8]) -> bool {
     false
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PyDefKind {
-    Class,
-    Function,
-    Other,
+fn python_call_dep_kind(tgt_node: TsNode) -> DepKind {
+    match tgt_node.parent().as_ref().map(TsNode::kind).unwrap_or("") {
+        "class_definition" => DepKind::Create,
+        "function_definition" => DepKind::Call,
+        _ => DepKind::Use,
+    }
 }
 
-fn python_def_kind_at(node: TsNode) -> PyDefKind {
+fn python_in_parameters_context(node: TsNode) -> bool {
     let mut cur = Some(node);
     while let Some(n) = cur {
         match n.kind() {
-            "class_definition" => return PyDefKind::Class,
-            "function_definition" => return PyDefKind::Function,
+            "parameters" | "lambda_parameters" => return true,
+            "function_definition" | "class_definition" | "module" => return false,
             _ => cur = n.parent(),
         }
     }
-    PyDefKind::Other
+    false
+}
+
+fn is_class_name_definition(node: TsNode) -> bool {
+    if node.kind() != "identifier" {
+        return false;
+    }
+    if let Some(parent) = node.parent() {
+        if parent.kind() == "class_definition" {
+            return parent.child_by_field_name("name").map_or(false, |n| n == node);
+        }
+    }
+    false
 }
 
 fn classify_stackgraph_dep(
@@ -454,18 +441,18 @@ fn classify_stackgraph_dep(
     tgt_content: &str,
     tgt_byte: usize,
     parse_cache: &mut HashMap<String, Tree>,
-) -> DepKind {
+) -> Option<DepKind> {
     if lang != Lang::Python {
-        return DepKind::Use;
+        return Some(DepKind::Use);
     }
 
     let src_tree = match ts_parse_cached(parse_cache, lang, src_filename, src_content) {
         Ok(t) => t.clone(),
-        Err(_) => return DepKind::Use,
+        Err(_) => return Some(DepKind::Use),
     };
     let tgt_tree = match ts_parse_cached(parse_cache, lang, tgt_filename, tgt_content) {
         Ok(t) => t.clone(),
-        Err(_) => return DepKind::Use,
+        Err(_) => return Some(DepKind::Use),
     };
 
     let src_root = src_tree.root_node();
@@ -473,31 +460,37 @@ fn classify_stackgraph_dep(
     let src_node = ts_node_at_byte(src_root, src_byte);
     let tgt_node = ts_node_at_byte(tgt_root, tgt_byte);
 
+    if python_in_parameters_context(tgt_node) {
+        return None;
+    }
+
     if python_in_import_context(src_node) {
-        return DepKind::Import;
+        // Import-to-Class is noise; the Import-to-File dep is captured by another path.
+        return if is_class_name_definition(tgt_node) {
+            None
+        } else {
+            Some(DepKind::Import)
+        };
+    }
+
+    // Suppress before class_bases so Extend doesn't land on import aliases (→ File entity).
+    if python_in_import_context(tgt_node) {
+        return None;
     }
 
     if python_in_class_bases(src_node) {
-        return DepKind::Extend;
+        return Some(DepKind::Extend);
     }
 
-    // isinstance(obj, TypeName) — the type reference is architecturally significant.
-    // Classify as Use explicitly for isinstance type arguments.
     if python_in_isinstance_arg(src_node, src_content.as_bytes()) {
-        return DepKind::Use;
+        return Some(DepKind::Use);
     }
 
     if let Some(call) = python_call_context(src_node) {
         if python_is_in_call_function(call, src_byte) {
-            // If the call target resolves to a class definition, treat it as Create (constructor call).
-            // Otherwise treat it as Call.
-            return match python_def_kind_at(tgt_node) {
-                PyDefKind::Class => DepKind::Create,
-                _ => DepKind::Call,
-            };
+            return Some(python_call_dep_kind(tgt_node));
         }
     }
 
-    DepKind::Use
+    Some(DepKind::Use)
 }
-
