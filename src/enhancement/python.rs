@@ -359,6 +359,9 @@ impl DepEnhancer for PythonQueryEnhancer {
         deps.extend(derive_override_deps(&index, &abstract_method_ids));
         deps.retain(|d| d.kind != DepKind::Import || !index.is_package_init_file(d.tgt));
         dedup_edges(&mut deps);
+        let call_pairs: HashSet<(EntityId, EntityId)> =
+            deps.iter().filter(|d| d.kind == DepKind::Call).map(|d| (d.src, d.tgt)).collect();
+        deps.retain(|d| d.kind != DepKind::Infer || !call_pairs.contains(&(d.src, d.tgt)));
         deps
     }
 }
@@ -370,6 +373,10 @@ fn filter_scope_bleed_false_positives(deps: Vec<EntityDep>, index: &EntityIndex)
 fn is_scope_bleed_false_positive(dep: &EntityDep, index: &EntityIndex) -> bool {
     let Some(src) = index.entity(dep.src) else { return false };
     let Some(tgt) = index.entity(dep.tgt) else { return false };
+
+    if src.kind == EntityKind::Field && tgt.kind == EntityKind::Class {
+        return true;
+    }
 
     let dep_row = dep.position.row();
     let at_src_definition = dep_row == src.code.start.row || dep_row == src.code.end.row;
