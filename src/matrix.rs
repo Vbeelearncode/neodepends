@@ -40,29 +40,50 @@ pub fn dsm_v1(entities: &[Entity], deps: &[EntityDep], changes: &[Change]) -> St
     serde_json::to_string_pretty(&matrix).unwrap()
 }
 
-pub fn dsm_v2(entities: &[Entity], deps: &[EntityDep], changes: &[Change]) -> String {
-    if entities.len() != entities.iter().map(|e| &e.id).unique().count() {
-        panic!("DSMv2 must have unique entity ids");
+fn dedup_by_display_path<'a>(
+    entities: &'a [Entity],
+    id_to_entity_map: &HashMap<EntityId, &Entity>,
+) -> (Vec<&'a Entity>, HashMap<EntityId, EntityId>) {
+    let mut path_to_first_id_map: HashMap<String, EntityId> = HashMap::new();
+    let mut id_to_canonical_id_map: HashMap<EntityId, EntityId> = HashMap::new();
+    for entity in entities {
+        let path = entity_display_path(entity, id_to_entity_map);
+        let canonical = *path_to_first_id_map.entry(path).or_insert(entity.id);
+        id_to_canonical_id_map.insert(entity.id, canonical);
     }
+    let canonical_entities =
+        entities.iter().filter(|e| id_to_canonical_id_map[&e.id] == e.id).collect();
+    (canonical_entities, id_to_canonical_id_map)
+}
 
-    let indices: HashMap<_, _> = entities.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
+pub fn dsm_v2(entities: &[Entity], deps: &[EntityDep], changes: &[Change]) -> String {
+    let id_to_entity_map: HashMap<EntityId, &Entity> = entities.iter().map(|e| (e.id, e)).collect();
+    let (canonical_entities, id_to_canonical_id_map) =
+        dedup_by_display_path(entities, &id_to_entity_map);
+    let id_to_index_map: HashMap<EntityId, usize> =
+        canonical_entities.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
+    let canonical_idx = |id: EntityId| id_to_index_map[&id_to_canonical_id_map[&id]];
 
-    let cochanges =
-        calc_cochanges(&entities, &changes).into_iter().map(|(a, b)| ((a, b), "Cochange"));
+    let cochanges = calc_cochanges(entities, changes)
+        .into_iter()
+        .map(|(a, b)| ((canonical_idx(a), canonical_idx(b)), "Cochange"))
+        .filter(|((src, tgt), _)| src != tgt);
 
-    let cells = deps
+    let cells: Vec<CellV1> = deps
         .iter()
-        .map(|d| ((d.src, d.tgt), d.kind.as_ref()))
+        .map(|d| ((canonical_idx(d.src), canonical_idx(d.tgt)), d.kind.as_ref()))
+        .unique()
+        .filter(|((src, tgt), _)| src != tgt)
         .chain(cochanges)
         .into_group_map()
         .into_iter()
-        .map(|((src, tgt), kinds)| CellV2::new(src, tgt, kinds))
-        .sorted_by_key(|c| (indices[&c.src], indices[&c.tgt]))
+        .map(|((src, tgt), kinds)| CellV1::new(src, tgt, kinds))
+        .sorted_by_key(|c| c.as_pair())
         .collect();
 
-    let variables = entities.into_iter().map(|e| EntityVar::from(e.clone())).collect();
-    let matrix = Matrix { schema: "2.0".to_string(), variables, cells };
-    serde_json::to_string_pretty(&matrix).unwrap()
+    let variables: Vec<String> =
+        canonical_entities.iter().map(|e| entity_display_path(e, &id_to_entity_map)).collect();
+    serde_json::to_string_pretty(&Matrix { schema: "2.0".to_string(), variables, cells }).unwrap()
 }
 
 #[derive(Debug, Clone)]
@@ -73,20 +94,60 @@ struct Matrix<V, C> {
     cells: Vec<C>,
 }
 
-/// This is just [Entity] but with less fields.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(serde::Serialize)]
-struct EntityVar {
-    id: EntityId,
-    parent_id: Option<EntityId>,
-    name: String,
-    kind: EntityKind,
+fn entity_base_path(entity: &Entity, id_to_entity_map: &HashMap<EntityId, &Entity>) -> String {
+    match entity.parent_id {
+        None => entity.name.clone(),
+        Some(pid) => format!(
+            "{}/{}",
+            entity_base_path(id_to_entity_map[&pid], id_to_entity_map),
+            entity.name
+        ),
+    }
 }
 
-impl EntityVar {
-    fn from(entity: Entity) -> Self {
-        let Entity { id, parent_id, name, kind, .. } = entity;
-        Self { id, parent_id, name, kind }
+fn leaf_kind_subfolder(kind: EntityKind) -> &'static str {
+    match kind {
+        EntityKind::Method => "methods",
+        EntityKind::Constructor => "constructors",
+        EntityKind::Function => "functions",
+        EntityKind::Annotation => "annotations",
+        _ => unreachable!(),
+    }
+}
+
+fn field_owner<'a>(
+    entity: &Entity,
+    id_to_entity_map: &HashMap<EntityId, &'a Entity>,
+) -> &'a Entity {
+    let parent = id_to_entity_map[&entity.parent_id.unwrap()];
+    match parent.kind {
+        EntityKind::Method | EntityKind::Constructor | EntityKind::Function => {
+            field_owner(parent, id_to_entity_map)
+        }
+        _ => parent,
+    }
+}
+
+fn entity_display_path(entity: &Entity, id_to_entity_map: &HashMap<EntityId, &Entity>) -> String {
+    let kind = entity.kind.as_ref();
+    match entity.kind {
+        EntityKind::File
+        | EntityKind::Class
+        | EntityKind::Enum
+        | EntityKind::Interface
+        | EntityKind::Record => {
+            format!("{}/self ({kind})", entity_base_path(entity, id_to_entity_map))
+        }
+        EntityKind::Field => {
+            let owner_base =
+                entity_base_path(field_owner(entity, id_to_entity_map), id_to_entity_map);
+            format!("{owner_base}/fields/{} ({kind})", entity.name)
+        }
+        _ => {
+            let parent_base =
+                entity_base_path(id_to_entity_map[&entity.parent_id.unwrap()], id_to_entity_map);
+            format!("{parent_base}/{}/{} ({kind})", leaf_kind_subfolder(entity.kind), entity.name)
+        }
     }
 }
 
@@ -107,21 +168,6 @@ impl CellV1 {
 
     fn as_pair(&self) -> (usize, usize) {
         (self.src, self.tgt)
-    }
-}
-
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
-struct CellV2 {
-    src: EntityId,
-    #[serde(rename = "dest")]
-    tgt: EntityId,
-    values: BTreeMap<String, usize>,
-}
-
-impl CellV2 {
-    fn new(src: EntityId, tgt: EntityId, kinds: Vec<&str>) -> Self {
-        Self { src, tgt, values: to_cell_values(kinds) }
     }
 }
 
