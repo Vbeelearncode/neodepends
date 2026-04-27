@@ -53,12 +53,19 @@
       (function_definition
         name: (identifier) @name) @tag.Function))
 )
-; Direct class method: `class C: def m(...): ...`
+; __init__ constructor
 (
   (class_definition
     body: (block
       (function_definition
-        name: (identifier) @name) @tag.Method))
+        name: (identifier) @name (#eq? @name "__init__")) @tag.Constructor))
+)
+; Direct class method (excluding __init__)
+(
+  (class_definition
+    body: (block
+      (function_definition
+        name: (identifier) @name (#not-eq? @name "__init__")) @tag.Method))
 )
 ; Decorated class method: `class C: @decorator\ndef m(...): ...`
 (
