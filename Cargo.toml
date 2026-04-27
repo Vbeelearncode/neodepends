@@ -51,4 +51,4 @@ walkdir = "2.4.0"
 # Fixes OOB panic in Database::get_incoming_path_degree: incoming_paths arena may not
 # cover a node handle when the stitcher queries a node that was never an end_node of any
 # loaded path. Fix: use .get() so out-of-range handles return Degree::Zero instead of panicking.
-stack-graphs = { git = "https://github.com/SoftwareDesignResearch/stack-graphs.git", rev = "bb444ea" }
+stack-graphs = { git = "https://github.com/SoftwareDesignResearch/stack-graphs.git", rev = "fa96604" }

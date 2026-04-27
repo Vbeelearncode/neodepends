@@ -1215,8 +1215,7 @@ checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
 [[package]]
 name = "stack-graphs"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af63a628b6666b3ce870cac60623d71d1575a9ccc5b2f0a2f83143c3e7da9a3a"
+source = "git+https://github.com/SoftwareDesignResearch/stack-graphs.git?rev=fa96604#fa966042f4552d5417af51e34af2a0621b7a7303"
 dependencies = [
  "bincode",
  "bitvec",
@@ -1834,8 +1833,3 @@ dependencies = [
  "quote",
  "syn 2.0.52",
 ]
-
-[[patch.unused]]
-name = "stack-graphs"
-version = "0.14.1"
-source = "git+https://github.com/SoftwareDesignResearch/stack-graphs.git?rev=bb444ea#bb444ea902831743dd9816131b49df5d6b9d0e06"
