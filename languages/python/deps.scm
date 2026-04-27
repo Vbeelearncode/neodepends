@@ -7,7 +7,7 @@
   function: (attribute
     object: (identifier) @_self
     attribute: (identifier) @call.self_method)
-  (#eq? @_self "self"))
+  (#match? @_self "^(self|cls)$"))
 
 (call
   function: (attribute
