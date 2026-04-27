@@ -40,208 +40,17 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      # 4. Build the Rust binary (will be renamed to neodepends-core)
-      - name: Build Rust binary
-        run: cargo build --release --locked
-
-      # 5. Install Python and PyInstaller
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install PyInstaller
-        run: python -m pip install pyinstaller
-
-      # Install Java (required for testing Java analysis with depends.jar)
+      # 4. Setup Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # 6. Compile Python script to standalone binary (Unix)
-      - name: Compile Python to binary (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          cd build
-          chmod +x build_binaries.sh
-          ./build_binaries.sh
+      # 5. Build Rust release
+      - name: Build Rust binary
+        run: cargo build --release --locked
 
-      - name: Compile Python to binary (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cd build
-          .\build_binaries.ps1
-
-      # 7. Test the compiled binary (Unix)
-      - name: Test binary on example projects (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          set -euo pipefail
-
-          echo "========================================"
-          echo "Testing compiled binary on examples"
-          echo "========================================"
-          echo ""
-
-          # Create test directory
-          mkdir -p test-run
-
-          # Set up test bundle structure
-          cp dist/binaries/dependency-analyzer test-run/
-          mkdir -p test-run/bin
-          cp target/release/neodepends test-run/bin/neodepends-core
-
-          # Copy depends.jar to bin/ (required for Java analysis)
-          # neodepends-core looks for depends.jar next to itself
-          cp artifacts/depends.jar test-run/bin/depends.jar
-
-          chmod +x test-run/dependency-analyzer test-run/bin/neodepends-core
-
-          # Copy examples directory for testing only (not included in release)
-          cp -R examples test-run/
-
-          cd test-run
-
-          # Test 1: Python example with StackGraphs
-          echo "[1/2] Testing Python analysis (StackGraphs)..."
-          ./dependency-analyzer \
-            --input examples/TrainTicketSystem_TOY_PYTHON_FIRST/tts \
-            --output test-output-python \
-            --language python \
-            --quiet || exit 1
-
-          # Verify Python output exists and is not empty
-          PYTHON_OUTPUT="test-output-python/analysis-result.json"
-          if [ ! -f "$PYTHON_OUTPUT" ]; then
-            echo "ERROR: Python output file not created: $PYTHON_OUTPUT"
-            exit 1
-          fi
-
-          PYTHON_SIZE=$(wc -c < "$PYTHON_OUTPUT" | tr -d ' ')
-          if [ "$PYTHON_SIZE" -lt 100 ]; then
-            echo "ERROR: Python output file is too small (${PYTHON_SIZE} bytes), likely empty or invalid"
-            exit 1
-          fi
-
-          echo "✓ Python test passed (output: ${PYTHON_SIZE} bytes)"
-          echo ""
-
-          # Test 2: Java example with Depends
-          echo "[2/2] Testing Java analysis (Depends)..."
-          ./dependency-analyzer \
-            --input examples/TrainTicketSystem_TOY_JAVA_FIRST \
-            --output test-output-java \
-            --language java \
-            --quiet || exit 1
-
-          # Verify Java output exists and is not empty
-          JAVA_OUTPUT="test-output-java/analysis-result.json"
-          if [ ! -f "$JAVA_OUTPUT" ]; then
-            echo "ERROR: Java output file not created: $JAVA_OUTPUT"
-            exit 1
-          fi
-
-          JAVA_SIZE=$(wc -c < "$JAVA_OUTPUT" | tr -d ' ')
-          if [ "$JAVA_SIZE" -lt 100 ]; then
-            echo "ERROR: Java output file is too small (${JAVA_SIZE} bytes), likely empty or invalid"
-            exit 1
-          fi
-
-          echo "✓ Java test passed (output: ${JAVA_SIZE} bytes)"
-          echo ""
-
-          echo "========================================"
-          echo "✓ All binary tests passed!"
-          echo "========================================"
-
-      - name: Test binary on example projects (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Write-Host "==========================================" -ForegroundColor Cyan
-          Write-Host "Testing compiled binary on examples" -ForegroundColor Cyan
-          Write-Host "==========================================" -ForegroundColor Cyan
-          Write-Host ""
-
-          # Create test directory
-          New-Item -ItemType Directory -Force -Path test-run | Out-Null
-
-          # Set up test bundle structure
-          Copy-Item dist/binaries/dependency-analyzer.exe test-run/
-          New-Item -ItemType Directory -Force -Path test-run/bin | Out-Null
-          Copy-Item target/release/neodepends.exe test-run/bin/neodepends-core.exe
-
-          # Copy depends.jar to bin/ (required for Java analysis)
-          Copy-Item artifacts/depends.jar test-run/bin/depends.jar
-
-          # Copy examples directory for testing only (not included in release)
-          Copy-Item -Recurse -Force examples test-run/
-
-          Set-Location test-run
-
-          # Test 1: Python example with StackGraphs
-          Write-Host "[1/2] Testing Python analysis (StackGraphs)..." -ForegroundColor Cyan
-          .\dependency-analyzer.exe `
-            --input examples\TrainTicketSystem_TOY_PYTHON_FIRST\tts `
-            --output test-output-python `
-            --language python `
-            --quiet
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: Python analysis failed" -ForegroundColor Red
-            exit 1
-          }
-
-          $pythonOutput = "test-output-python/analysis-result.json"
-          if (-not (Test-Path $pythonOutput)) {
-            Write-Host "ERROR: Python output file not created: $pythonOutput" -ForegroundColor Red
-            exit 1
-          }
-
-          $pythonSize = (Get-Item $pythonOutput).Length
-          if ($pythonSize -lt 100) {
-            Write-Host "ERROR: Python output file is too small ($pythonSize bytes)" -ForegroundColor Red
-            exit 1
-          }
-
-          Write-Host "✓ Python test passed (output: $pythonSize bytes)" -ForegroundColor Green
-          Write-Host ""
-
-          # Test 2: Java example with Depends
-          Write-Host "[2/2] Testing Java analysis (Depends)..." -ForegroundColor Cyan
-          .\dependency-analyzer.exe `
-            --input examples\TrainTicketSystem_TOY_JAVA_FIRST `
-            --output test-output-java `
-            --language java `
-            --quiet
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: Java analysis failed" -ForegroundColor Red
-            exit 1
-          }
-
-          $javaOutput = "test-output-java/analysis-result.json"
-          if (-not (Test-Path $javaOutput)) {
-            Write-Host "ERROR: Java output file not created: $javaOutput" -ForegroundColor Red
-            exit 1
-          }
-
-          $javaSize = (Get-Item $javaOutput).Length
-          if ($javaSize -lt 100) {
-            Write-Host "ERROR: Java output file is too small ($javaSize bytes)" -ForegroundColor Red
-            exit 1
-          }
-
-          Write-Host "✓ Java test passed (output: $javaSize bytes)" -ForegroundColor Green
-          Write-Host ""
-
-          Write-Host "==========================================" -ForegroundColor Cyan
-          Write-Host "✓ All binary tests passed!" -ForegroundColor Cyan
-          Write-Host "==========================================" -ForegroundColor Cyan
-
-      # 8. Package release bundle (Unix: tar.gz)
       - name: Create release package (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -253,29 +62,18 @@ jobs:
           HOST="$(rustc -vV | awk '/^host: /{print $2}')"
           PKG_NAME="neodepends"
 
-          # Create bundle directory
           BUNDLE_DIR="dist/${PKG_NAME}-${TAG}-${HOST}"
-          mkdir -p "${BUNDLE_DIR}/bin"
+          mkdir -p "${BUNDLE_DIR}"
 
-          # Copy compiled Python binary (main user-facing command)
-          cp "dist/binaries/dependency-analyzer" "${BUNDLE_DIR}/dependency-analyzer"
-          chmod +x "${BUNDLE_DIR}/dependency-analyzer"
+          cp "target/release/neodepends" "${BUNDLE_DIR}/neodepends"
+          chmod +x "${BUNDLE_DIR}/neodepends"
+          cp artifacts/depends.jar "${BUNDLE_DIR}/depends.jar"
 
-          # Copy Rust binary to bin/ (internal dependency, renamed to neodepends-core)
-          cp "target/release/neodepends" "${BUNDLE_DIR}/bin/neodepends-core"
-          chmod +x "${BUNDLE_DIR}/bin/neodepends-core"
-
-          # Copy depends.jar to bin/ (required for Java dependency analysis)
-          cp artifacts/depends.jar "${BUNDLE_DIR}/bin/depends.jar" 2>/dev/null || true
-
-          # Copy documentation (use client-facing README)
-          cp README-clients.md "${BUNDLE_DIR}/README.md"
+          cp README.md "${BUNDLE_DIR}/README.md"
           cp LICENSE "${BUNDLE_DIR}/" 2>/dev/null || true
 
-          # Create tarball
           tar -C dist -czf "dist/${PKG_NAME}-${TAG}-${HOST}.tar.gz" "${PKG_NAME}-${TAG}-${HOST}"
 
-      # 9. Package release bundle (Windows: zip)
       - name: Create release package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -285,27 +83,17 @@ jobs:
           $platform = (rustc -vV | Select-String '^host: ' | ForEach-Object { $_.ToString().Split(' ')[1] })
           $pkgName = "neodepends"
 
-          # Create bundle directory
           $bundleDir = "dist/$pkgName-$tag-$platform"
-          New-Item -ItemType Directory -Force -Path "$bundleDir/bin" | Out-Null
+          New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
 
-          # Copy compiled Python binary (main user-facing command)
-          Copy-Item "dist/binaries/dependency-analyzer.exe" "$bundleDir/dependency-analyzer.exe"
+          Copy-Item "target/release/neodepends.exe" "$bundleDir/neodepends.exe"
+          Copy-Item "artifacts/depends.jar" "$bundleDir/depends.jar"
 
-          # Copy Rust binary to bin/ (internal dependency, renamed to neodepends-core)
-          Copy-Item "target/release/neodepends.exe" "$bundleDir/bin/neodepends-core.exe"
-
-          # Copy depends.jar to bin/ (required for Java dependency analysis)
-          if (Test-Path "artifacts/depends.jar") { Copy-Item "artifacts/depends.jar" "$bundleDir/bin/depends.jar" }
-
-          # Copy documentation (use client-facing README)
-          if (Test-Path "README-clients.md") { Copy-Item "README-clients.md" "$bundleDir/README.md" }
+          if (Test-Path "README.md") { Copy-Item "README.md" "$bundleDir/README.md" }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" "$bundleDir/LICENSE" }
 
-          # Create zip archive
           Compress-Archive -Force -Path $bundleDir -DestinationPath "dist/$pkgName-$tag-$platform.zip"
 
-      # 10. Upload to GitHub Release (only when triggered by tag push)
       - name: Upload release artifacts
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
