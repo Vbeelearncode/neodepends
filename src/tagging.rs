@@ -52,6 +52,10 @@ impl EntitySet {
         self.table.find_id(position)
     }
 
+    pub fn iter_entities(&self) -> impl Iterator<Item = &Entity> {
+        self.entities.values()
+    }
+
     pub fn count_simple_ids<I>(&self, spans: I) -> Counter<SimpleEntityId>
     where
         I: IntoIterator<Item = PartialSpan>,

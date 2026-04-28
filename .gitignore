@@ -1,14 +1,9 @@
 /target
 /release
+/tests
 .DS_Store
 __pycache__/
 *.pyc
-
-# PyInstaller build artifacts
-build/build/
-build/dist/
-build/*.spec.bak
-dist/binaries/
 
 # Backup and temporary files
 tools/neodepends_python_export.py.broken_backup
@@ -27,3 +22,7 @@ TEST_AUTO/
 CHANGELOG.md
 CONTRIBUTING.md
 RELEASING.md
+
+# Built files
+dist/
+build/

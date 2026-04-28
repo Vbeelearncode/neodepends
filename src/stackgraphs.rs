@@ -3,21 +3,23 @@
 //! See https://github.com/github/stack-graphs
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::RwLock;
+use std::time::Duration;
+
+use tempfile::TempDir;
 
 use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Result;
 use stack_graphs::arena::Handle;
+use stack_graphs::graph::File;
 use stack_graphs::graph::Node;
 use stack_graphs::graph::StackGraph;
 use stack_graphs::partial::PartialPath;
 use stack_graphs::partial::PartialPaths;
-use stack_graphs::stitching::Database;
-use stack_graphs::stitching::DatabaseCandidates;
+use stack_graphs::storage::SQLiteWriter;
 use stack_graphs::stitching::ForwardPartialPathStitcher;
 use stack_graphs::stitching::StitcherConfig;
 use tree_sitter::Node as TsNode;
@@ -48,6 +50,14 @@ pub enum StackGraphsPythonMode {
     Ast,
 }
 
+/// Stack graph data built for a single source file.
+struct BuiltFileGraph {
+    file: Handle<File>,
+    graph: StackGraph,
+    partials: PartialPaths,
+    paths: Vec<PartialPath>,
+}
+
 /// A Stack Graphs resolver.
 ///
 /// See [Resolver].
@@ -56,8 +66,11 @@ pub struct StackGraphsResolver {
     lang: Lang,
     py_mode: StackGraphsPythonMode,
     sgl: Arc<StackGraphLanguage>,
-    cache: Arc<SgCache>,
-    files: RwLock<HashSet<FileKey>>,
+    ref_timeout: Duration,
+    _tmp_dir: TempDir,
+    writer: Mutex<Option<SQLiteWriter>>,
+    file_keys: RwLock<HashMap<String, FileKey>>,
+    contents: RwLock<HashMap<String, String>>,
 }
 
 impl StackGraphsResolver {
@@ -66,27 +79,167 @@ impl StackGraphsResolver {
         lang: Lang,
         py_mode: StackGraphsPythonMode,
         sgl: Arc<StackGraphLanguage>,
-        cache: Arc<SgCache>,
+        ref_timeout: Duration,
     ) -> Self {
-        Self { commit_id, lang, py_mode, sgl, cache, files: Default::default() }
+        let tmp_dir = TempDir::new().expect("failed to create temp dir for stack-graphs SQLite");
+        let db_path = tmp_dir.path().join("sg.db");
+        let writer = SQLiteWriter::open(&db_path).expect("failed to open on-disk SQLite for stack-graphs");
+        Self {
+            commit_id,
+            lang,
+            py_mode,
+            sgl,
+            ref_timeout,
+            _tmp_dir: tmp_dir,
+            writer: Mutex::new(Some(writer)),
+            file_keys: Default::default(),
+            contents: Default::default(),
+        }
     }
 }
 
 impl Resolver for StackGraphsResolver {
     fn add_file(&self, filename: &str, content: &str) {
-        let file = FileKey::from_content(filename.to_string(), content);
-
-        if !self.cache.contains(&file) {
-            self.cache.insert(file.clone(), build(&self.sgl, filename, content));
+        // Skip duplicates — resolve() would panic on them anyway
+        if self.file_keys.read().unwrap().contains_key(filename) {
+            return;
         }
 
-        self.files.write().unwrap().insert(file);
+        if let Some(mut built) = build_file_graph(&self.sgl, filename, content) {
+            let mut guard = self.writer.lock().unwrap();
+            if let Some(ref mut writer) = *guard {
+                if let Err(err) = writer.store_result_for_file(
+                    &built.graph,
+                    built.file,
+                    "",
+                    &mut built.partials,
+                    &built.paths,
+                ) {
+                    log::warn!("stack-graphs: failed to store graph for '{}': {err}", filename);
+                }
+            }
+        }
+
+        let file_key = FileKey::from_content(filename.to_string(), content);
+        self.file_keys.write().unwrap().insert(filename.to_string(), file_key);
+        self.contents.write().unwrap().insert(filename.to_string(), content.to_string());
     }
 
     fn resolve(&self) -> Vec<FileDep> {
-        let files = self.files.read().unwrap();
-        let data = files.iter().filter_map(|f| self.cache.get(f).unwrap());
-        resolve(data, self.commit_id, self.lang, self.py_mode)
+        let file_keys = self.file_keys.read().unwrap();
+        let contents = self.contents.read().unwrap();
+        let mut parse_cache: HashMap<String, Tree> = HashMap::new();
+
+        let writer = self.writer.lock().unwrap().take().expect("resolve called twice");
+        let mut reader = writer.into_reader();
+
+        // Load all file graphs upfront to enumerate every reference node.
+        // Paths are NOT loaded here; the SQLiteReader loads them on-demand
+        // as the stitcher explores the path frontier.
+        let file_paths: Vec<String> = {
+            let files: Vec<String> = reader
+                .list_all()
+                .unwrap()
+                .try_iter()
+                .unwrap()
+                .map(|e| e.unwrap().path.to_string_lossy().to_string())
+                .collect();
+            files
+        };
+
+        for file_path in &file_paths {
+            if let Err(err) = reader.load_graph_for_file(file_path) {
+                log::warn!("stack-graphs: failed to load graph for '{}': {err}", file_path);
+            }
+        }
+
+        let all_reference_nodes: Vec<Handle<Node>> = {
+            let (graph, _, _) = reader.get();
+            graph.iter_nodes().filter(|&n| graph[n].is_reference()).collect()
+        };
+
+        // Pre-load all paths so incoming_paths is fully populated before stitching.
+        // This ensures get_incoming_path_degree returns correct values, preventing
+        // incorrect cycle-detection behavior in the stitcher.
+        if let Err(e) = reader.load_all_paths(&stack_graphs::NoCancellation) {
+            log::warn!("stack-graphs: failed to pre-load paths: {e}");
+        }
+
+        let commit_id = self.commit_id;
+        let lang = self.lang;
+        let py_mode = self.py_mode;
+        let mut deps: Vec<FileDep> = Vec::new();
+        let diag_config = StitcherConfig::default();
+        let ref_timeout = self.ref_timeout;
+
+        // Stitch one reference at a time to bound intermediate path memory per query.
+        // All base paths are already pre-loaded by load_all_paths, so lazy-loading
+        // during stitching is a no-op and incoming_paths is fully populated.
+        for (ref_idx, &ref_node) in all_reference_nodes.iter().enumerate() {
+            let cancellation = stack_graphs::CancelAfterDuration::new(ref_timeout);
+            let stitching_res = ForwardPartialPathStitcher::find_all_complete_partial_paths(
+                &mut reader,
+                std::iter::once(ref_node),
+                diag_config,
+                &cancellation,
+                |graph, _partials, path| {
+                    let get_filename = |n: Handle<Node>| graph[graph[n].file().unwrap()].name().to_string();
+                    let get_position = |n: Handle<Node>| {
+                        PartialPosition::Whole(Span::from_lsp(&graph.source_info(n).unwrap().span).start)
+                    };
+
+                    let start_node_pos = get_position(path.start_node);
+                    let end_node_pos = get_position(path.end_node);
+
+                    let src_filename = get_filename(path.start_node);
+                    let tgt_filename = get_filename(path.end_node);
+                    let src_content = contents.get(&src_filename).map(|s| s.as_str()).unwrap_or("");
+                    let tgt_content = contents.get(&tgt_filename).map(|s| s.as_str()).unwrap_or("");
+                    let src_byte = start_node_pos.byte().unwrap_or(0);
+                    let tgt_byte = end_node_pos.byte().unwrap_or(0);
+
+                    let kind = match py_mode {
+                        StackGraphsPythonMode::UseOnly => Some(DepKind::Use),
+                        StackGraphsPythonMode::Ast => classify_stackgraph_dep(
+                            lang,
+                            &src_filename,
+                            src_content,
+                            src_byte,
+                            &tgt_filename,
+                            tgt_content,
+                            tgt_byte,
+                            &mut parse_cache,
+                        ),
+                    };
+                    let Some(kind) = kind else {
+                        return;
+                    };
+
+                    // Skip edges involving files outside the scan scope (e.g. stdlib refs).
+                    let (Some(src_file_key), Some(tgt_file_key)) = (file_keys.get(&src_filename), file_keys.get(&tgt_filename)) else {
+                        return;
+                    };
+
+                    deps.push(Dep::new(
+                        FileEndpoint::new(src_file_key.clone(), start_node_pos),
+                        FileEndpoint::new(tgt_file_key.clone(), end_node_pos),
+                        kind,
+                        start_node_pos,
+                        commit_id,
+                    ));
+                },
+            );
+            if stitching_res.is_err() {
+                let (graph, _, _) = reader.get();
+                let src_file = graph[ref_node].file()
+                    .map(|f| graph[f].name().to_string())
+                    .unwrap_or_else(|| "<unknown>".to_string());
+                let src_line = graph.source_info(ref_node).map(|si| si.span.start.line).unwrap_or(0);
+                log::warn!("[SG] ref #{ref_idx:05} CANCELLED  file={src_file}:{src_line}");
+            }
+        }
+
+        deps
     }
 }
 
@@ -96,8 +249,7 @@ impl Debug for StackGraphsResolver {
             .field("commit_id", &self.commit_id)
             .field("py_mode", &self.py_mode)
             .field("tsg_path", &self.sgl.tsg_path())
-            .field("cache", &self.cache)
-            .field("files", &self.files)
+            .field("file_keys", &self.file_keys)
             .finish()
     }
 }
@@ -107,132 +259,33 @@ impl Debug for StackGraphsResolver {
 /// See [ResolverFactory].
 #[derive(Debug)]
 pub struct StackGraphsResolverFactory {
-    cache: Arc<SgCache>,
     py_mode: StackGraphsPythonMode,
+    ref_timeout: Duration,
 }
 
 impl StackGraphsResolverFactory {
-    pub fn new(py_mode: StackGraphsPythonMode) -> Self {
-        Self { cache: Arc::new(SgCache::new()), py_mode }
+    pub fn new(py_mode: StackGraphsPythonMode, ref_timeout_secs: Option<u64>) -> Self {
+        let ref_timeout = ref_timeout_secs.map(Duration::from_secs).unwrap_or(Duration::MAX);
+        Self { py_mode, ref_timeout }
     }
 }
 
 impl ResolverFactory for StackGraphsResolverFactory {
     fn try_create(&self, commit_id: PseudoCommitId, lang: Lang) -> Option<Box<dyn Resolver>> {
         lang.sgl().map(|sgl| {
-            Box::new(StackGraphsResolver::new(
-                commit_id,
-                lang,
-                self.py_mode,
-                sgl,
-                self.cache.clone(),
-            )) as Box<dyn Resolver>
+            Box::new(StackGraphsResolver::new(commit_id, lang, self.py_mode, sgl, self.ref_timeout))
+                as Box<dyn Resolver>
         })
     }
 }
 
-/// Used to avoid duplicate stack graph calculations.
-#[derive(Debug)]
-struct SgCache {
-    map: RwLock<HashMap<FileKey, Option<StackGraphData>>>,
-}
-
-impl SgCache {
-    fn new() -> Self {
-        Self { map: Default::default() }
-    }
-
-    fn contains(&self, key: &FileKey) -> bool {
-        self.map.read().unwrap().contains_key(key)
-    }
-
-    fn get(&self, key: &FileKey) -> Option<Option<StackGraphData>> {
-        self.map.read().unwrap().get(key).cloned()
-    }
-
-    fn insert(&self, key: FileKey, value: Option<StackGraphData>) {
-        self.map.write().unwrap().insert(key, value);
-    }
-}
-
-/// A stack graph representation that is able to be cloned and moved around for
-/// caching purposes.
+/// Attempt to build a stack graph from a single source file.
 ///
-/// Intended to contain the stack graph of a single file.
-#[derive(Debug, Clone)]
-struct StackGraphData {
-    file_key: FileKey,
-    content: String,
-    graph: stack_graphs::serde::StackGraph,
-    paths: Vec<stack_graphs::serde::PartialPath>,
-}
-
-impl StackGraphData {
-    fn new(
-        file_key: FileKey,
-        content: String,
-        graph: StackGraph,
-        mut partials: PartialPaths,
-        paths: Vec<PartialPath>,
-    ) -> Self {
-        let paths = paths
-            .iter()
-            .map(|p| stack_graphs::serde::PartialPath::from_partial_path(&graph, &mut partials, p))
-            .collect::<Vec<_>>();
-        let graph = stack_graphs::serde::StackGraph::from_graph(&graph);
-        Self { file_key, content, graph, paths }
-    }
-}
-
-/// A stack graph representation that can be used to resolve dependencies.
-///
-/// Intended to contain the stack graphs of many files.
-struct StackGraphEval {
-    file_keys: HashMap<String, FileKey>,
-    contents: HashMap<String, String>,
-    graph: StackGraph,
-    partials: PartialPaths,
-    paths: Vec<PartialPath>,
-}
-
-impl StackGraphEval {
-    fn from_data<I>(data: I) -> anyhow::Result<Self>
-    where
-        I: IntoIterator<Item = StackGraphData>,
-    {
-        let mut file_keys = HashMap::new();
-        let mut contents = HashMap::new();
-        let mut graph = StackGraph::new();
-        let mut partials = PartialPaths::new();
-        let mut paths = Vec::new();
-
-        for portable in data {
-            if file_keys.contains_key(&portable.file_key.filename) {
-                bail!("duplicate filenames");
-            }
-
-            file_keys.insert(portable.file_key.filename.clone(), portable.file_key.clone());
-            contents.insert(portable.file_key.filename.clone(), portable.content.clone());
-            portable.graph.load_into(&mut graph)?;
-
-            for path in &portable.paths {
-                paths.push(path.to_partial_path(&mut graph, &mut partials)?);
-            }
-        }
-
-        Ok(StackGraphEval { file_keys, contents, graph, partials, paths })
-    }
-}
-
-/// Attempt to build a stack graph from a source file.
-///
-/// Returns None if a stack graph could not be built.
-fn build(sgl: &StackGraphLanguage, filename: &str, content: &str) -> Option<StackGraphData> {
+/// Returns `None` if the file could not be parsed or indexed.
+fn build_file_graph(sgl: &StackGraphLanguage, filename: &str, content: &str) -> Option<BuiltFileGraph> {
     let mut graph = StackGraph::new();
     let mut partials = PartialPaths::new();
     let mut paths = Vec::new();
-
-    let file_key = FileKey::from_content(filename.to_string(), content);
 
     let file = graph.get_or_create_file(filename);
     let vars = Variables::new();
@@ -250,7 +303,7 @@ fn build(sgl: &StackGraphLanguage, filename: &str, content: &str) -> Option<Stac
     )
     .ok()?;
 
-    Some(StackGraphData::new(file_key, content.to_string(), graph, partials, paths))
+    Some(BuiltFileGraph { file, graph, partials, paths })
 }
 
 fn ts_parse_cached<'a>(
@@ -321,23 +374,62 @@ fn python_is_in_call_function(call: TsNode, byte: usize) -> bool {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PyDefKind {
-    Class,
-    Function,
-    Other,
+/// Check whether `node` sits inside an `isinstance(obj, Type)` call.
+/// Returns true when the reference originated from a type-check context,
+/// which is architecturally significant (Use dependency).
+fn python_in_isinstance_arg(node: TsNode, src: &[u8]) -> bool {
+    let mut cur = Some(node);
+    while let Some(n) = cur {
+        if n.kind() == "argument_list" {
+            if let Some(call) = n.parent() {
+                if call.kind() == "call" {
+                    if let Some(func) = call.child_by_field_name("function") {
+                        if func.kind() == "identifier" {
+                            if let Ok(name) = func.utf8_text(src) {
+                                if name == "isinstance" {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cur = n.parent();
+    }
+    false
 }
 
-fn python_def_kind_at(node: TsNode) -> PyDefKind {
+fn python_call_dep_kind(tgt_node: TsNode) -> DepKind {
+    match tgt_node.parent().as_ref().map(TsNode::kind).unwrap_or("") {
+        "class_definition" => DepKind::Create,
+        "function_definition" => DepKind::Call,
+        _ => DepKind::Use,
+    }
+}
+
+fn python_in_parameters_context(node: TsNode) -> bool {
     let mut cur = Some(node);
     while let Some(n) = cur {
         match n.kind() {
-            "class_definition" => return PyDefKind::Class,
-            "function_definition" => return PyDefKind::Function,
+            "parameters" | "lambda_parameters" => return true,
+            "function_definition" | "class_definition" | "module" => return false,
             _ => cur = n.parent(),
         }
     }
-    PyDefKind::Other
+    false
+}
+
+fn is_class_name_definition(node: TsNode) -> bool {
+    if node.kind() != "identifier" {
+        return false;
+    }
+    if let Some(parent) = node.parent() {
+        if parent.kind() == "class_definition" {
+            return parent.child_by_field_name("name").map_or(false, |n| n == node);
+        }
+    }
+    false
 }
 
 fn classify_stackgraph_dep(
@@ -349,18 +441,18 @@ fn classify_stackgraph_dep(
     tgt_content: &str,
     tgt_byte: usize,
     parse_cache: &mut HashMap<String, Tree>,
-) -> DepKind {
+) -> Option<DepKind> {
     if lang != Lang::Python {
-        return DepKind::Use;
+        return Some(DepKind::Use);
     }
 
     let src_tree = match ts_parse_cached(parse_cache, lang, src_filename, src_content) {
         Ok(t) => t.clone(),
-        Err(_) => return DepKind::Use,
+        Err(_) => return Some(DepKind::Use),
     };
     let tgt_tree = match ts_parse_cached(parse_cache, lang, tgt_filename, tgt_content) {
         Ok(t) => t.clone(),
-        Err(_) => return DepKind::Use,
+        Err(_) => return Some(DepKind::Use),
     };
 
     let src_root = src_tree.root_node();
@@ -368,93 +460,37 @@ fn classify_stackgraph_dep(
     let src_node = ts_node_at_byte(src_root, src_byte);
     let tgt_node = ts_node_at_byte(tgt_root, tgt_byte);
 
+    if python_in_parameters_context(tgt_node) {
+        return None;
+    }
+
     if python_in_import_context(src_node) {
-        return DepKind::Import;
+        // Import-to-Class is noise; the Import-to-File dep is captured by another path.
+        return if is_class_name_definition(tgt_node) {
+            None
+        } else {
+            Some(DepKind::Import)
+        };
+    }
+
+    // Suppress before class_bases so Extend doesn't land on import aliases (→ File entity).
+    if python_in_import_context(tgt_node) {
+        return None;
     }
 
     if python_in_class_bases(src_node) {
-        return DepKind::Extend;
+        return Some(DepKind::Extend);
+    }
+
+    if python_in_isinstance_arg(src_node, src_content.as_bytes()) {
+        return Some(DepKind::Use);
     }
 
     if let Some(call) = python_call_context(src_node) {
         if python_is_in_call_function(call, src_byte) {
-            // If the call target resolves to a class definition, treat it as Create (constructor call).
-            // Otherwise treat it as Call.
-            return match python_def_kind_at(tgt_node) {
-                PyDefKind::Class => DepKind::Create,
-                _ => DepKind::Call,
-            };
+            return Some(python_call_dep_kind(tgt_node));
         }
     }
 
-    DepKind::Use
-}
-
-/// Resolve file-level dependencies given for a collection of files.
-fn resolve<I>(data: I, commit_id: PseudoCommitId, lang: Lang, py_mode: StackGraphsPythonMode) -> Vec<FileDep>
-where
-    I: IntoIterator<Item = StackGraphData>,
-{
-    let mut references = Vec::new();
-    let mut eval = StackGraphEval::from_data(data).unwrap();
-    let mut parse_cache: HashMap<String, Tree> = HashMap::new();
-
-    let mut db = Database::new();
-
-    for path in &eval.paths {
-        db.add_partial_path(&eval.graph, &mut eval.partials, path.clone());
-    }
-
-    let _stitching_res = ForwardPartialPathStitcher::find_all_complete_partial_paths(
-        &mut DatabaseCandidates::new(&eval.graph, &mut eval.partials, &mut db),
-        eval.graph.iter_nodes().filter(|&n| eval.graph[n].is_reference()),
-        StitcherConfig::default(),
-        &stack_graphs::NoCancellation,
-        |_, _, p| {
-            references.push(p.clone());
-        },
-    );
-
-    let filename = |n: Handle<Node>| eval.graph[eval.graph[n].file().unwrap()].name().to_string();
-    let file_key = |n: Handle<Node>| eval.file_keys.get(&filename(n)).unwrap().clone();
-    let position = |n: Handle<Node>| {
-        PartialPosition::Whole(Span::from_lsp(&eval.graph.source_info(n).unwrap().span).start)
-    };
-
-    references
-        .into_iter()
-        .map(|r| {
-            let start_node_pos = position(r.start_node);
-            let end_node_pos = position(r.end_node);
-
-            let src_filename = filename(r.start_node);
-            let tgt_filename = filename(r.end_node);
-            let src_content = eval.contents.get(&src_filename).map(|s| s.as_str()).unwrap_or("");
-            let tgt_content = eval.contents.get(&tgt_filename).map(|s| s.as_str()).unwrap_or("");
-            let src_byte = start_node_pos.byte().unwrap_or(0);
-            let tgt_byte = end_node_pos.byte().unwrap_or(0);
-
-            let kind = match py_mode {
-                StackGraphsPythonMode::UseOnly => DepKind::Use,
-                StackGraphsPythonMode::Ast => classify_stackgraph_dep(
-                    lang,
-                    src_filename.as_str(),
-                    src_content,
-                    src_byte,
-                    tgt_filename.as_str(),
-                    tgt_content,
-                    tgt_byte,
-                    &mut parse_cache,
-                ),
-            };
-
-            Dep::new(
-                FileEndpoint::new(file_key(r.start_node), start_node_pos),
-                FileEndpoint::new(file_key(r.end_node), end_node_pos),
-                kind,
-                start_node_pos,
-                commit_id,
-            )
-        })
-        .collect()
+    Some(DepKind::Use)
 }

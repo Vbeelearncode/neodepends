@@ -7,6 +7,12 @@ use lazy_static::lazy_static;
 use tree_sitter::Language;
 use tree_sitter_stack_graphs::StackGraphLanguage;
 
+use crate::enhancement::ChainedEnhancer;
+use crate::enhancement::DepEnhancer;
+use crate::enhancement::JavaConstructorHeuristic;
+use crate::enhancement::JavaOverrideHeuristic;
+use crate::enhancement::PythonDataclassHeuristic;
+use crate::enhancement::PythonQueryEnhancer;
 use crate::spec::Pathspec;
 use crate::tagging::Tagger;
 
@@ -77,6 +83,14 @@ impl Lang {
         self.config().depends_lang
     }
 
+    pub fn query_enhancer(&self) -> Option<Arc<dyn DepEnhancer>> {
+        self.config().query_enhancer.clone()
+    }
+
+    pub fn heuristic_enhancer(&self) -> Option<Arc<dyn DepEnhancer>> {
+        self.config().heuristic_enhancer.clone()
+    }
+
     fn config(&self) -> &LangConfig {
         match &self {
             Lang::C => &C,
@@ -97,6 +111,8 @@ struct LangConfig {
     tagger: Tagger,
     sgl: Option<Arc<StackGraphLanguage>>,
     depends_lang: Option<&'static str>,
+    query_enhancer: Option<Arc<dyn DepEnhancer>>,
+    heuristic_enhancer: Option<Arc<dyn DepEnhancer>>,
 }
 
 impl LangConfig {
@@ -105,11 +121,29 @@ impl LangConfig {
         pathspec: Pathspec,
         tag_query: Option<&str>,
         tsg: Option<&str>,
+        dep_query: Option<&str>,
         depends_lang: Option<&'static str>,
+        heuristics: Vec<Arc<dyn DepEnhancer>>,
     ) -> Self {
         let tagger = Tagger::new(Some(language), tag_query);
         let sgl = tsg.map(|x| Arc::new(StackGraphLanguage::from_str(language, &x).unwrap()));
-        Self { pathspec, tagger, sgl, depends_lang }
+
+        let query_enhancer: Option<Arc<dyn DepEnhancer>> =
+            dep_query.and_then(|q| match PythonQueryEnhancer::new(language, q) {
+                Ok(e) => Some(Arc::new(e) as Arc<dyn DepEnhancer>),
+                Err(err) => {
+                    eprintln!("WARNING: failed to compile dep query for language: {err}");
+                    None
+                }
+            });
+
+        let heuristic_enhancer: Option<Arc<dyn DepEnhancer>> = match heuristics.len() {
+            0 => None,
+            1 => heuristics.into_iter().next(),
+            _ => Some(Arc::new(ChainedEnhancer(heuristics)) as Arc<dyn DepEnhancer>),
+        };
+
+        Self { pathspec, tagger, sgl, depends_lang, query_enhancer, heuristic_enhancer }
     }
 }
 
@@ -193,62 +227,85 @@ lazy_static! {
         LANG_TABLE.pathspec(Lang::C),
         None,
         None,
-        Some("cpp")
+        None,
+        Some("cpp"),
+        vec![],
     );
     static ref CPP: LangConfig = LangConfig::new(
         tree_sitter_cpp::language(),
         LANG_TABLE.pathspec(Lang::Cpp),
         None,
         None,
-        Some("cpp")
+        None,
+        Some("cpp"),
+        vec![],
     );
     static ref GO: LangConfig = LangConfig::new(
         tree_sitter_go::language(),
         LANG_TABLE.pathspec(Lang::Go),
         None,
         None,
-        Some("go")
+        None,
+        Some("go"),
+        vec![],
     );
     static ref JAVA: LangConfig = LangConfig::new(
         tree_sitter_java::language(),
         LANG_TABLE.pathspec(Lang::Java),
         Some(include_str!("../languages/java/tags.scm")),
         Some(include_str!("../languages/java/stack-graphs.tsg")),
-        Some("java")
+        None,
+        Some("java"),
+        vec![
+            Arc::new(JavaConstructorHeuristic) as Arc<dyn DepEnhancer>,
+            Arc::new(JavaOverrideHeuristic) as Arc<dyn DepEnhancer>,
+        ],
     );
     static ref JAVASCRIPT: LangConfig = LangConfig::new(
         tree_sitter_javascript::language(),
         LANG_TABLE.pathspec(Lang::JavaScript),
         None,
         Some(include_str!("../languages/javascript/stack-graphs.tsg")),
-        None
+        None,
+        None,
+        vec![],
     );
     static ref KOTLIN: LangConfig = LangConfig::new(
         tree_sitter_kotlin::language(),
         LANG_TABLE.pathspec(Lang::Kotlin),
         None,
         None,
-        Some("kotlin")
+        None,
+        Some("kotlin"),
+        vec![],
     );
     static ref PYTHON: LangConfig = LangConfig::new(
         tree_sitter_python::language(),
         LANG_TABLE.pathspec(Lang::Python),
         Some(include_str!("../languages/python/tags.scm")),
         Some(include_str!("../languages/python/stack-graphs.tsg")),
-        Some("python")
+        Some(include_str!("../languages/python/deps.scm")),
+        Some("python"),
+        vec![
+            Arc::new(PythonDataclassHeuristic) as Arc<dyn DepEnhancer>,
+        ],
     );
     static ref RUBY: LangConfig = LangConfig::new(
         tree_sitter_ruby::language(),
         LANG_TABLE.pathspec(Lang::Ruby),
         None,
         Some(include_str!("../languages/ruby/stack-graphs.tsg")),
-        Some("ruby")
+        None,
+        Some("ruby"),
+        vec![],
     );
     static ref TYPESCRIPT: LangConfig = LangConfig::new(
         tree_sitter_typescript::language_typescript(),
         LANG_TABLE.pathspec(Lang::TypeScript),
         None,
         Some(include_str!("../languages/typescript/stack-graphs.tsg")),
-        None
+        None,
+        None,
+        vec![],
     );
 }

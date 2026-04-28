@@ -1,2 +1,0 @@
-# Survey System Python Package
-

@@ -643,6 +643,7 @@ pub enum DepKind {
     Extend,
     Implement,
     Import,
+    Infer,
     Link,
     MixIn,
     Parameter,
@@ -653,6 +654,7 @@ pub enum DepKind {
     Set,
     Throw,
     Use,
+    Override,
 }
 
 impl ToSql for DepKind {

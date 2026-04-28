@@ -1,0 +1,99 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [ main, production ]
+  pull_request:
+    branches: [ main, production ]
+  workflow_dispatch: {}
+
+jobs:
+  smoke-test:
+    name: Smoke Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build (release)
+        run: cargo build --release --locked
+
+      - name: Smoke test examples (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p tests/test_output/smoke
+
+          target/release/neodepends \
+            --force \
+            --input examples/TrainTicketSystem_TOY_PYTHON_FIRST \
+            --output tests/test_output/smoke/python.json \
+            --langs python \
+            --stackgraphs
+
+          test -s tests/test_output/smoke/python.json
+
+          target/release/neodepends \
+            --force \
+            --input examples/TrainTicketSystem_TOY_JAVA_FIRST \
+            --output tests/test_output/smoke/java.json \
+            --langs java \
+            --depends
+
+          test -s tests/test_output/smoke/java.json
+
+      - name: Smoke test examples (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path tests/test_output/smoke | Out-Null
+
+          .\target\release\neodepends.exe `
+            --force `
+            --input examples/TrainTicketSystem_TOY_PYTHON_FIRST `
+            --output tests/test_output/smoke/python.json `
+            --langs python `
+            --stackgraphs
+
+          if (-not (Test-Path tests/test_output/smoke/python.json)) { exit 1 }
+          if ((Get-Item tests/test_output/smoke/python.json).Length -le 0) { exit 1 }
+
+          .\target\release\neodepends.exe `
+            --force `
+            --input examples/TrainTicketSystem_TOY_JAVA_FIRST `
+            --output tests/test_output/smoke/java.json `
+            --langs java `
+            --depends
+
+          if (-not (Test-Path tests/test_output/smoke/java.json)) { exit 1 }
+          if ((Get-Item tests/test_output/smoke/java.json).Length -le 0) { exit 1 }
+
+      - name: Upload smoke outputs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-output-${{ matrix.os }}
+          path: tests/test_output/smoke/
+          retention-days: 7

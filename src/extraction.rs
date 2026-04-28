@@ -24,13 +24,15 @@ use crate::tagging::EntitySet;
 pub struct Extractor {
     fs: FileSystem,
     file_level: bool,
+    no_enhance: bool,
+    use_heuristics: bool,
     resolver: ResolverManager,
     entity_sets: RwLock<HashMap<FileKey, EntitySet>>,
 }
 
 impl Extractor {
-    pub fn new(fs: FileSystem, file_level: bool) -> Self {
-        Self { fs, file_level, resolver: ResolverManager::empty(), entity_sets: Default::default() }
+    pub fn new(fs: FileSystem, file_level: bool, no_enhance: bool, use_heuristics: bool) -> Self {
+        Self { fs, file_level, no_enhance, use_heuristics, resolver: ResolverManager::empty(), entity_sets: Default::default() }
     }
 
     pub fn set_resolver(&mut self, resolver: ResolverManager) {
@@ -61,11 +63,51 @@ impl Extractor {
     pub fn extract_deps(&self, spec: &Filespec) -> impl ParallelIterator<Item = EntityDep> + '_ {
         let files = self.fs.list(spec);
         self.ensure_entity_sets(files.files().iter().cloned().collect());
-        self.resolver
+
+        let deps: Vec<EntityDep> = self.resolver
             .resolve(&self.fs, &files)
             .into_par_iter()
-            .map(move |d| d.to_entity_dep(&self.entity_sets.read().unwrap()).unwrap())
+            .map(|d| d.to_entity_dep(&self.entity_sets.read().unwrap()).unwrap())
             .filter(|d| !d.is_loop())
+            .collect();
+
+        let deps = if self.no_enhance { deps } else { self.enhance_deps(files.files(), deps) };
+        deps.into_par_iter()
+    }
+
+    fn enhance_deps(&self, file_keys: &HashSet<FileKey>, mut deps: Vec<EntityDep>) -> Vec<EntityDep> {
+        let all_entities: Vec<Entity> = {
+            let entity_sets = self.entity_sets.read().unwrap();
+            file_keys
+                .iter()
+                .filter_map(|fk| entity_sets.get(fk))
+                .flat_map(|es| es.iter_entities().cloned())
+                .collect()
+        };
+
+        let mut sources_by_lang: HashMap<Lang, HashMap<String, String>> = HashMap::new();
+        for fk in file_keys {
+            let Some(lang) = Lang::of(&fk.filename) else { continue };
+            let has_query = lang.query_enhancer().is_some();
+            let has_heuristics = self.use_heuristics && lang.heuristic_enhancer().is_some();
+            if !has_query && !has_heuristics { continue };
+            match self.fs.read(fk.content_id) {
+                Ok(content) => { sources_by_lang.entry(lang).or_default().insert(fk.filename.clone(), content); }
+                Err(e) => log::warn!("enhance_deps: could not read {}: {}", fk.filename, e),
+            }
+        }
+
+        for (lang, sources) in &sources_by_lang {
+            if let Some(enhancer) = lang.query_enhancer() {
+                deps = enhancer.enhance(sources, &all_entities, deps);
+            }
+            if self.use_heuristics {
+                if let Some(enhancer) = lang.heuristic_enhancer() {
+                    deps = enhancer.enhance(sources, &all_entities, deps);
+                }
+            }
+        }
+        deps
     }
 
     pub fn extract_contents(&self, spec: &Filespec) -> impl ParallelIterator<Item = Content> + '_ {
