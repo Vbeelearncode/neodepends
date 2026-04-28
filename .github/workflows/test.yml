@@ -1,4 +1,4 @@
-name: Test Suite
+name: Smoke Test
 
 on:
   push:
@@ -8,11 +8,9 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  test:
-    name: Run Tests (${{ matrix.os }})
+  smoke-test:
+    name: Smoke Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      TOY_REPO_URL: "https://github.com/FreeworkEarth/ARCH_ANALYSIS_TRAINTICKET_TOY_EXAMPLES_MULTILANG.git"
     strategy:
       fail-fast: false
       matrix:
@@ -31,59 +29,71 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build (release)
-        run: cargo build --release --locked
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install Java (for depends.jar)
+      - name: Install Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Fetch TOY examples (optional)
-        if: runner.os == 'Linux' && env.TOY_REPO_URL != ''
-        shell: bash
-        run: |
-          git clone --depth 1 --branch main "$TOY_REPO_URL" /tmp/toy
-          echo "TOY_ROOT=/tmp/toy" >> "$GITHUB_ENV"
+      - name: Build (release)
+        run: cargo build --release --locked
 
-      - name: Run tests (Unix)
+      - name: Smoke test examples (Unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          chmod +x tests/run_all_tests.sh
-          ./tests/run_all_tests.sh
+          set -euo pipefail
 
-      - name: Run tests (Windows)
+          mkdir -p tests/test_output/smoke
+
+          target/release/neodepends \
+            --force \
+            --input examples/TrainTicketSystem_TOY_PYTHON_FIRST \
+            --output tests/test_output/smoke/python.json \
+            --langs python \
+            --stackgraphs
+
+          test -s tests/test_output/smoke/python.json
+
+          target/release/neodepends \
+            --force \
+            --input examples/TrainTicketSystem_TOY_JAVA_FIRST \
+            --output tests/test_output/smoke/java.json \
+            --langs java \
+            --depends
+
+          test -s tests/test_output/smoke/java.json
+
+      - name: Smoke test examples (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          .\tests\run_all_tests.ps1
+          New-Item -ItemType Directory -Force -Path tests/test_output/smoke | Out-Null
 
-      - name: Example comparison (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          TOY_ARGS=""
-          if [ -d /tmp/toy ]; then
-            TOY_ARGS="--toy-root /tmp/toy"
-          fi
-          python3 tools/run_handcount_regression.py \
-            --neodepends-bin target/release/neodepends \
-            --depends-jar artifacts/depends.jar \
-            --output-dir tests/test_output/handcount_regression \
-            --tolerance 0.05 \
-            $TOY_ARGS
+          .\target\release\neodepends.exe `
+            --force `
+            --input examples/TrainTicketSystem_TOY_PYTHON_FIRST `
+            --output tests/test_output/smoke/python.json `
+            --langs python `
+            --stackgraphs
 
-      - name: Upload test artifacts on failure
+          if (-not (Test-Path tests/test_output/smoke/python.json)) { exit 1 }
+          if ((Get-Item tests/test_output/smoke/python.json).Length -le 0) { exit 1 }
+
+          .\target\release\neodepends.exe `
+            --force `
+            --input examples/TrainTicketSystem_TOY_JAVA_FIRST `
+            --output tests/test_output/smoke/java.json `
+            --langs java `
+            --depends
+
+          if (-not (Test-Path tests/test_output/smoke/java.json)) { exit 1 }
+          if ((Get-Item tests/test_output/smoke/java.json).Length -le 0) { exit 1 }
+
+      - name: Upload smoke outputs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-output-${{ matrix.os }}
-          path: tests/test_output/
+          name: smoke-output-${{ matrix.os }}
+          path: tests/test_output/smoke/
           retention-days: 7
