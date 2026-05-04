@@ -21,6 +21,7 @@ pub(crate) struct EntityIndex {
     id_to_entity_map: HashMap<EntityId, Entity>,
     content_to_file_entity_map: HashMap<ContentId, EntityId>,
     pub(crate) name_to_class_ids_map: HashMap<String, Vec<EntityId>>,
+    name_to_callable_ids_map: HashMap<String, Vec<EntityId>>,
     pub(crate) class_to_methods_map: HashMap<EntityId, HashMap<String, EntityId>>,
     class_to_fields_map: HashMap<EntityId, HashMap<String, EntityId>>,
     pub(crate) class_to_bases_map: HashMap<EntityId, Vec<EntityId>>,
@@ -68,6 +69,7 @@ impl EntityIndex {
 
         let mut content_to_file_entity_map: HashMap<ContentId, EntityId> = HashMap::new();
         let mut name_to_class_ids_map: HashMap<String, Vec<EntityId>> = HashMap::new();
+        let mut name_to_callable_ids_map: HashMap<String, Vec<EntityId>> = HashMap::new();
         let mut class_to_methods_map: HashMap<EntityId, HashMap<String, EntityId>> = HashMap::new();
         let mut class_to_fields_map: HashMap<EntityId, HashMap<String, EntityId>> = HashMap::new();
         let mut parent_to_children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
@@ -84,6 +86,7 @@ impl EntityIndex {
                     name_to_class_ids_map.entry(entity.name.clone()).or_default().push(entity.id);
                 }
                 EntityKind::Method | EntityKind::Function | EntityKind::Constructor => {
+                    name_to_callable_ids_map.entry(entity.name.clone()).or_default().push(entity.id);
                     if let Some(parent_id) = entity.parent_id {
                         class_to_methods_map
                             .entry(parent_id)
@@ -142,6 +145,7 @@ impl EntityIndex {
             id_to_entity_map: entities.iter().map(|e| (e.id, e.clone())).collect(),
             content_to_file_entity_map,
             name_to_class_ids_map,
+            name_to_callable_ids_map,
             class_to_methods_map,
             class_to_fields_map,
             class_to_bases_map,
@@ -305,6 +309,22 @@ impl EntityIndex {
             })
             .copied()
             .or_else(|| classes.first().copied())
+    }
+
+    pub(crate) fn resolve_callable(&self, name: &str, preferred_content_id: ContentId) -> Option<EntityId> {
+        let callables = self.name_to_callable_ids_map.get(name)?;
+        if callables.len() == 1 {
+            return Some(callables[0]);
+        }
+        callables
+            .iter()
+            .find(|&&id| {
+                self.id_to_entity_map
+                    .get(&id)
+                    .map_or(false, |e| e.content_id == preferred_content_id)
+            })
+            .copied()
+            .or_else(|| callables.first().copied())
     }
 }
 

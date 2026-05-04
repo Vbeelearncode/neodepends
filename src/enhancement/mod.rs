@@ -8,6 +8,7 @@ use crate::core::EntityDep;
 pub mod entity_index;
 pub mod java;
 pub mod python;
+pub mod returns;
 
 pub use java::{JavaConstructorHeuristic, JavaOverrideHeuristic};
 pub use python::{PythonDataclassHeuristic, PythonQueryEnhancer};
